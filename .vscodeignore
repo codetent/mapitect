@@ -1,0 +1,9 @@
+**
+!dist/extension.js
+!dist/webview.js
+!media/**
+!syntaxes/**
+!language-configuration.json
+!package.json
+!README.md
+!LICENSE

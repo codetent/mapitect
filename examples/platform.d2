@@ -1,0 +1,106 @@
+# Archer example — an e-commerce platform, IcePanel style.
+# Open the preview with Cmd+K V (Ctrl+K V on Windows/Linux).
+
+direction: right
+
+vars: {
+  stack: Kubernetes
+}
+
+classes: {
+  external: {
+    style.fill: "#64748b"
+  }
+  async: {
+    style.stroke-dash: 4
+    style.animated: true
+  }
+}
+
+customer: Customer {
+  shape: person
+  tooltip: Browses the catalog, places orders and tracks deliveries.
+}
+
+admin: Back-office staff {
+  shape: person
+  tooltip: Manages catalog, pricing and refunds.
+}
+
+shop: Online Shop {
+  tooltip: Everything we build and run on ${stack}.
+
+  web: Storefront {
+    tooltip: Next.js app serving the public shop.
+    link: https://nextjs.org
+  }
+  backoffice: Back-office UI {
+    tooltip: Internal React admin panel.
+  }
+
+  gateway: API Gateway {
+    shape: hexagon
+    tooltip: Auth, rate limiting and routing.
+  }
+
+  services: Domain services {
+    catalog: Catalog Service {
+      tooltip: Products, categories and search indexing.
+    }
+    orders: Order Service {
+      tooltip: Checkout orchestration and order lifecycle.
+    }
+    payments: Payment Service
+    notify: Notification Service
+
+    orders -> payments: charge
+    orders -> notify: order events {class: async}
+  }
+
+  data: Data {
+    catalogdb: Catalog DB {
+      shape: cylinder
+    }
+    ordersdb: orders {
+      shape: sql_table
+      id: uuid {constraint: primary_key}
+      customer_id: uuid {constraint: foreign_key}
+      total: decimal
+      status: varchar
+    }
+    bus: Event Bus {
+      shape: queue
+      tooltip: Kafka topics for domain events.
+    }
+    cache: Redis {
+      shape: cylinder
+    }
+  }
+
+  web -> gateway: HTTPS
+  backoffice -> gateway: HTTPS
+  gateway -> services.catalog: REST
+  gateway -> services.orders: REST
+  services.catalog -> data.catalogdb: reads / writes
+  services.catalog -> data.cache: cache
+  services.orders -> data.ordersdb: SQL
+  services.orders -> data.bus: publishes {class: async}
+  data.bus -> services.notify: consumes {class: async}
+}
+
+stripe: Stripe {
+  shape: cloud
+  class: external
+  link: https://stripe.com
+}
+
+sendgrid: SendGrid {
+  shape: cloud
+  class: external
+}
+
+customer -> shop.web: browses
+admin -> shop.backoffice: manages
+shop.services.payments -> stripe: card payments
+shop.services.notify -> sendgrid: e-mail
+sendgrid -> customer: order updates {class: async}

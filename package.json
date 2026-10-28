@@ -1,0 +1,160 @@
+{
+  "name": "archer-d2",
+  "displayName": "Archer — Interactive D2 Diagrams",
+  "description": "Render D2 diagrams as interactive, IcePanel-style architecture maps with zoom, pan, drill-down and navigation.",
+  "version": "0.1.0",
+  "publisher": "archer",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "d2",
+    "diagram",
+    "architecture",
+    "c4",
+    "icepanel"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:archer.preview"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "d2",
+        "aliases": [
+          "D2",
+          "d2"
+        ],
+        "extensions": [
+          ".d2"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "d2",
+        "scopeName": "source.d2",
+        "path": "./syntaxes/d2.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "archer.openPreview",
+        "title": "Open Interactive Preview",
+        "category": "Archer",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "archer.openPreviewToSide",
+        "title": "Open Interactive Preview to the Side",
+        "category": "Archer",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "archer.exportSvg",
+        "title": "Export Diagram as SVG",
+        "category": "Archer"
+      },
+      {
+        "command": "archer.exportPng",
+        "title": "Export Diagram as PNG",
+        "category": "Archer"
+      },
+      {
+        "command": "archer.fit",
+        "title": "Fit Diagram to Screen",
+        "category": "Archer"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "archer.openPreviewToSide",
+          "when": "editorLangId == d2",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "archer.openPreview",
+          "when": "editorLangId == d2"
+        },
+        {
+          "command": "archer.openPreviewToSide",
+          "when": "editorLangId == d2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "archer.openPreviewToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == d2"
+      }
+    ],
+    "configuration": {
+      "title": "Archer",
+      "properties": {
+        "archer.syncSelection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight the diagram element under the editor cursor."
+        },
+        "archer.defaultDepth": {
+          "type": "number",
+          "default": 0,
+          "description": "Initial nesting depth to expand (0 = everything expanded)."
+        },
+        "archer.wheel": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zoom",
+            "pan"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Trackpad scrolling pans, mouse wheel zooms",
+            "Wheel always zooms",
+            "Wheel pans; hold Ctrl/Cmd to zoom"
+          ],
+          "description": "What the scroll wheel does in the diagram."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies --allow-missing-repository",
+    "pretest": "npm run build"
+  },
+  "devDependencies": {
+    "@types/d3-ease": "^3.0.2",
+    "@types/d3-interpolate": "^3.0.4",
+    "@types/d3-selection": "^3.0.12",
+    "@types/d3-transition": "^3.0.9",
+    "@types/d3-zoom": "^3.0.9",
+    "@types/node": "^26.6.6",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "d3-ease": "^3.0.1",
+    "d3-interpolate": "^3.0.1",
+    "d3-selection": "^3.0.0",
+    "d3-transition": "^3.0.1",
+    "d3-zoom": "^3.0.0",
+    "elkjs": "^0.12.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

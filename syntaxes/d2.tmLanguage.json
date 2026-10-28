@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "D2",
+  "scopeName": "source.d2",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#blockString" },
+    { "include": "#string" },
+    { "include": "#edge" },
+    { "include": "#reserved" },
+    { "include": "#label" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.block.d2", "begin": "\"\"\"", "end": "\"\"\"" },
+        { "name": "comment.line.number-sign.d2", "match": "#.*$" }
+      ]
+    },
+    "blockString": {
+      "name": "string.unquoted.block.d2",
+      "begin": "(\\|+)\\s*([a-zA-Z0-9_-]*)",
+      "beginCaptures": { "1": { "name": "punctuation.definition.string.begin.d2" }, "2": { "name": "entity.name.type.language.d2" } },
+      "end": "\\1",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.d2" } }
+    },
+    "string": {
+      "patterns": [
+        { "name": "string.quoted.double.d2", "begin": "\"", "end": "\"", "patterns": [{ "name": "constant.character.escape.d2", "match": "\\\\." }] },
+        { "name": "string.quoted.single.d2", "begin": "'", "end": "'" }
+      ]
+    },
+    "edge": { "name": "keyword.operator.edge.d2", "match": "<->|<-|->|--" },
+    "reserved": {
+      "match": "(?<=^|[\\s.{;])(shape|label|icon|tooltip|link|near|direction|style|class|classes|width|height|constraint|vars|layers|scenarios|steps|source-arrowhead|target-arrowhead|grid-rows|grid-columns|fill|stroke|stroke-width|stroke-dash|border-radius|opacity|font-color|font-size|bold|italic|underline|shadow|3d|multiple|animated|filled|double-border|description|technology|tags)(?=\\s*[:.{])",
+      "captures": { "1": { "name": "keyword.other.reserved.d2" } }
+    },
+    "label": {
+      "match": "(:)\\s*([^{;#|\"'\\n]+)",
+      "captures": { "1": { "name": "punctuation.separator.key-value.d2" }, "2": { "name": "string.unquoted.d2" } }
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.section.block.d2", "match": "[{}]" },
+        { "name": "punctuation.separator.d2", "match": "[;.]" }
+      ]
+    }
+  }
+}
