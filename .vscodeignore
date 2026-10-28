@@ -1,6 +1,7 @@
 **
 !dist/extension.js
 !dist/webview.js
+!dist/d2/**
 !media/**
 !syntaxes/**
 !language-configuration.json

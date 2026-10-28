@@ -1,6 +1,6 @@
 {
   "name": "archer-d2",
-  "displayName": "Archer — Interactive D2 Diagrams",
+  "displayName": "Archer \u2014 Interactive D2 Diagrams",
   "description": "Render D2 diagrams as interactive, IcePanel-style architecture maps with zoom, pan, drill-down and navigation.",
   "version": "0.1.0",
   "publisher": "archer",
@@ -110,8 +110,8 @@
         },
         "archer.defaultDepth": {
           "type": "number",
-          "default": 0,
-          "description": "Initial nesting depth to expand (0 = everything expanded)."
+          "default": 1,
+          "description": "Detail level a preview opens at: 1 shows only top-level elements, 2 and 3 expand deeper, 0 expands everything."
         },
         "archer.wheel": {
           "type": "string",
@@ -129,7 +129,29 @@
           "description": "What the scroll wheel does in the diagram."
         }
       }
-    }
+    },
+    "colors": [
+      {
+        "id": "archer.sourceHighlightBackground",
+        "description": "Background of the source lines of the element selected in the Archer diagram.",
+        "defaults": {
+          "dark": "#5b8cff33",
+          "light": "#3b6cf626",
+          "highContrast": "#5b8cff40",
+          "highContrastLight": "#3b6cf633"
+        }
+      },
+      {
+        "id": "archer.sourceHighlightRuler",
+        "description": "Scrollbar mark for the source of the element selected in the Archer diagram.",
+        "defaults": {
+          "dark": "#5b8cffcc",
+          "light": "#3b6cf6cc",
+          "highContrast": "#5b8cff",
+          "highContrastLight": "#3b6cf6"
+        }
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -156,5 +178,8 @@
     "elkjs": "^0.12.1",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@d2lang/d2": "^0.1.34"
   }
 }

@@ -1,35 +1,47 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import type { DiagramModel, SourceRange } from './model.ts';
-import { parseD2 } from './parser/d2.ts';
+import type { D2 } from '@d2lang/d2';
+import type { DiagramModel, EditOp, ParseIssue, SourceRange } from './model.ts';
+import { D2Compiler } from './d2/compiler.ts';
+import type { Built } from './d2/convert.ts';
+import { EditError, planEdit } from './d2/edits.ts';
 
 const VIEW_TYPE = 'archer.preview';
 
+let compiler: D2Compiler | undefined;
+
+// The build copies the package's Node build (worker + WASM) next to the bundle.
+function createD2(): D2 {
+  const lib = require(path.join(__dirname, 'd2', 'index.js')) as typeof import('@d2lang/d2');
+  return new lib.D2();
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+  compiler = new D2Compiler(createD2);
+  const models = new DocumentModels(compiler);
   const diagnostics = vscode.languages.createDiagnosticCollection('d2');
   const previews = new Map<string, Preview>();
+  const timers = new Map<string, NodeJS.Timeout>();
 
   const isD2 = (doc: vscode.TextDocument) => doc.languageId === 'd2' || doc.fileName.endsWith('.d2');
 
-  const updateDiagnostics = (doc: vscode.TextDocument, model = parseD2(doc.getText())) => {
+  const schedule = (doc: vscode.TextDocument, delay = 180) => {
+    const key = doc.uri.toString();
+    clearTimeout(timers.get(key));
+    timers.set(key, setTimeout(() => void models.refresh(doc), delay));
+  };
+
+  models.onDidUpdate(({ doc, state }) => {
     diagnostics.set(
       doc.uri,
-      model.issues.map((issue) => {
-        const d = new vscode.Diagnostic(
-          toRange(issue.range),
-          issue.message,
-          issue.severity === 'error'
-            ? vscode.DiagnosticSeverity.Error
-            : issue.severity === 'warning'
-              ? vscode.DiagnosticSeverity.Warning
-              : vscode.DiagnosticSeverity.Information,
-        );
-        d.source = 'archer';
+      state.issues.map((issue) => {
+        const d = new vscode.Diagnostic(toRange(issue.range), issue.message, vscode.DiagnosticSeverity.Error);
+        d.source = 'd2';
         return d;
       }),
     );
-    return model;
-  };
+    previews.get(doc.uri.toString())?.update(state);
+  });
 
   const open = async (uri: vscode.Uri | undefined, column: vscode.ViewColumn) => {
     const target = uri ?? vscode.window.activeTextEditor?.document.uri;
@@ -44,7 +56,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     const doc = await vscode.workspace.openTextDocument(target);
     const panel = vscode.window.createWebviewPanel(VIEW_TYPE, previewTitle(doc), column, webviewOptions(context, doc));
-    track(new Preview(context, panel, doc));
+    track(new Preview(context, panel, doc, models, schedule));
   };
 
   const track = (preview: Preview) => {
@@ -59,37 +71,34 @@ export function activate(context: vscode.ExtensionContext): void {
     return doc ? previews.get(doc.uri.toString()) : undefined;
   };
 
-  const timers = new Map<string, NodeJS.Timeout>();
-
   context.subscriptions.push(
     diagnostics,
+    models,
     vscode.commands.registerCommand('archer.openPreview', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Active)),
     vscode.commands.registerCommand('archer.openPreviewToSide', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Beside)),
     vscode.commands.registerCommand('archer.exportSvg', () => activePreview()?.post({ type: 'command', command: 'export-svg' })),
     vscode.commands.registerCommand('archer.exportPng', () => activePreview()?.post({ type: 'command', command: 'export-png' })),
     vscode.commands.registerCommand('archer.fit', () => activePreview()?.post({ type: 'command', command: 'fit' })),
 
-    vscode.workspace.onDidOpenTextDocument((doc) => isD2(doc) && updateDiagnostics(doc)),
-    vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.delete(doc.uri)),
-    vscode.workspace.onDidChangeTextDocument((ev) => {
-      const doc = ev.document;
-      if (!isD2(doc)) return;
-      const key = doc.uri.toString();
-      clearTimeout(timers.get(key));
-      timers.set(
-        key,
-        setTimeout(() => {
-          const model = updateDiagnostics(doc);
-          previews.get(key)?.update(model);
-        }, 180),
-      );
+    vscode.workspace.onDidOpenTextDocument((doc) => isD2(doc) && schedule(doc, 0)),
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      diagnostics.delete(doc.uri);
+      models.forget(doc.uri);
+    }),
+    vscode.workspace.onDidChangeTextDocument((ev) => isD2(ev.document) && schedule(ev.document)),
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      for (const p of previews.values()) p.restoreHighlight();
     }),
     vscode.window.onDidChangeTextEditorSelection((ev) => {
       if (!vscode.workspace.getConfiguration('archer').get('syncSelection', true)) return;
       previews.get(ev.textEditor.document.uri.toString())?.syncCursor(ev.selections[0].active.line);
     }),
     vscode.workspace.onDidChangeConfiguration((ev) => {
-      if (ev.affectsConfiguration('archer')) for (const p of previews.values()) p.update();
+      if (!ev.affectsConfiguration('archer')) return;
+      for (const p of previews.values()) {
+        const state = models.get(p.document);
+        if (state) p.update(state);
+      }
     }),
     vscode.window.registerWebviewPanelSerializer(VIEW_TYPE, {
       async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: { uri?: string } | undefined) {
@@ -100,7 +109,7 @@ export function activate(context: vscode.ExtensionContext): void {
         try {
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(state.uri));
           panel.webview.options = webviewOptions(context, doc);
-          track(new Preview(context, panel, doc));
+          track(new Preview(context, panel, doc, models, schedule));
         } catch {
           panel.dispose();
         }
@@ -108,10 +117,101 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  for (const doc of vscode.workspace.textDocuments) if (isD2(doc)) updateDiagnostics(doc);
+  for (const doc of vscode.workspace.textDocuments) if (isD2(doc)) schedule(doc, 0);
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  await compiler?.dispose();
+  compiler = undefined;
+}
+
+// ------------------------------------------------------------ compilation
+
+interface DocState {
+  version: number;
+  ok: boolean;
+  built?: Built; // last successful build, kept while the file has errors
+  issues: ParseIssue[];
+}
+
+class DocumentModels implements vscode.Disposable {
+  private readonly states = new Map<string, DocState>();
+  private readonly inflight = new Map<string, { version: number; promise: Promise<DocState> }>();
+  private readonly emitter = new vscode.EventEmitter<{ doc: vscode.TextDocument; state: DocState }>();
+  readonly onDidUpdate = this.emitter.event;
+
+  constructor(private readonly compiler: D2Compiler) {}
+
+  get(doc: vscode.TextDocument): DocState | undefined {
+    return this.states.get(doc.uri.toString());
+  }
+
+  forget(uri: vscode.Uri): void {
+    this.states.delete(uri.toString());
+  }
+
+  // Compile the current version of the document (deduplicated per version).
+  refresh(doc: vscode.TextDocument): Promise<DocState> {
+    const key = doc.uri.toString();
+    const current = this.states.get(key);
+    if (current && current.version === doc.version) return Promise.resolve(current);
+    const pending = this.inflight.get(key);
+    if (pending && pending.version === doc.version) return pending.promise;
+
+    const version = doc.version;
+    const text = doc.getText();
+    const promise = (async () => {
+      const files = text.includes('@') ? await siblingFiles(doc) : {};
+      const result = await this.compiler.compile(text, path.basename(doc.fileName), files);
+      const previous = this.states.get(key);
+      const state: DocState = result.ok
+        ? { version, ok: true, built: result.built, issues: [] }
+        : { version, ok: false, built: previous?.built, issues: result.issues };
+      if (!previous || previous.version <= version) {
+        this.states.set(key, state);
+        this.emitter.fire({ doc, state });
+      }
+      return state;
+    })();
+    this.inflight.set(key, { version, promise });
+    void promise.finally(() => {
+      if (this.inflight.get(key)?.promise === promise) this.inflight.delete(key);
+    });
+    return promise;
+  }
+
+  dispose(): void {
+    this.emitter.dispose();
+  }
+}
+
+// Other .d2 files near the document, so `@imports` resolve.
+async function siblingFiles(doc: vscode.TextDocument): Promise<Record<string, string>> {
+  const dir = vscode.Uri.file(path.dirname(doc.uri.fsPath));
+  const files: Record<string, string> = {};
+  const visit = async (uri: vscode.Uri, rel: string, depth: number) => {
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(uri);
+    } catch {
+      return;
+    }
+    for (const [name, type] of entries) {
+      if (Object.keys(files).length >= 200) return;
+      const child = vscode.Uri.joinPath(uri, name);
+      const relPath = rel ? `${rel}/${name}` : name;
+      if (type === vscode.FileType.Directory && depth < 2 && !name.startsWith('.') && name !== 'node_modules') {
+        await visit(child, relPath, depth + 1);
+      } else if (type === vscode.FileType.File && name.endsWith('.d2') && child.fsPath !== doc.uri.fsPath) {
+        files[relPath] = new TextDecoder().decode(await vscode.workspace.fs.readFile(child));
+      }
+    }
+  };
+  await visit(dir, '', 0);
+  return files;
+}
+
+// ---------------------------------------------------------------- preview
 
 function webviewOptions(context: vscode.ExtensionContext, doc: vscode.TextDocument): vscode.WebviewPanelOptions & vscode.WebviewOptions {
   const roots = [
@@ -134,54 +234,102 @@ function toRange(r: SourceRange): vscode.Range {
 type WebviewMessage =
   | { type: 'ready' }
   | { type: 'navigate'; range: SourceRange }
+  | { type: 'highlight'; range: SourceRange | null }
   | { type: 'openLink'; url: string }
-  | { type: 'export'; format: 'svg' | 'png'; data: string };
+  | { type: 'export'; format: 'svg' | 'png'; data: string }
+  | { type: 'edit'; edit: EditOp }
+  | { type: 'undo' }
+  | { type: 'redo' };
+
+const EMPTY: DiagramModel = { direction: 'down', nodes: {}, roots: [], edges: [], issues: [], lineIndex: {} };
 
 class Preview {
-  private model: DiagramModel | undefined;
   private ready = false;
   private lastCursor: string | null = null;
+  // The selected element's declaration, highlighted in the editor without moving the cursor.
+  // Archer's own theme colours: the built-in range highlight is nearly invisible in many dark themes.
+  private readonly selection = vscode.window.createTextEditorDecorationType({
+    backgroundColor: new vscode.ThemeColor('archer.sourceHighlightBackground'),
+    isWholeLine: true,
+    overviewRulerColor: new vscode.ThemeColor('archer.sourceHighlightRuler'),
+    overviewRulerLane: vscode.OverviewRulerLane.Full,
+  });
+  private highlighted: vscode.Range | undefined;
+  // Visual edits as whole-text snapshots; only replayed while the text still matches.
+  private readonly history: { before: string; after: string }[] = [];
+  private readonly future: { before: string; after: string }[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     readonly panel: vscode.WebviewPanel,
     readonly document: vscode.TextDocument,
+    private readonly models: DocumentModels,
+    private readonly schedule: (doc: vscode.TextDocument, delay?: number) => void,
   ) {
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.svg');
     panel.webview.html = this.html();
     panel.webview.onDidReceiveMessage((msg: WebviewMessage) => this.onMessage(msg));
+    panel.onDidDispose(() => this.selection.dispose());
+  }
+
+  private editors(): vscode.TextEditor[] {
+    return vscode.window.visibleTextEditors.filter((e) => e.document.uri.toString() === this.document.uri.toString());
+  }
+
+  // Re-apply after the editor is shown again; decorations don't survive an editor being hidden.
+  restoreHighlight(): void {
+    for (const editor of this.editors()) editor.setDecorations(this.selection, this.highlighted ? [this.highlighted] : []);
+  }
+
+  // Only editors already showing the file are touched; a click never opens it.
+  private highlight(range: SourceRange | null): void {
+    this.highlighted = range ? toRange(range) : undefined;
+    for (const editor of this.editors()) {
+      editor.setDecorations(this.selection, this.highlighted ? [this.highlighted] : []);
+      if (this.highlighted) editor.revealRange(this.highlighted, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
   }
 
   post(msg: unknown): void {
     if (this.ready) void this.panel.webview.postMessage(msg);
   }
 
-  update(model?: DiagramModel): void {
-    if (model) this.model = model;
-    this.model ??= parseD2(this.document.getText());
+  update(state: DocState): void {
     const config = vscode.workspace.getConfiguration('archer');
+    const model = state.built ? this.resolveIcons(state.built.model) : EMPTY;
     this.post({
       type: 'update',
       uri: this.document.uri.toString(),
       fileName: path.basename(this.document.fileName),
-      model: this.resolveIcons(this.model),
-      config: { defaultDepth: config.get<number>('defaultDepth', 0), wheel: config.get<string>('wheel', 'auto') },
+      model: { ...model, issues: state.issues, valid: state.ok },
+      config: { defaultDepth: config.get<number>('defaultDepth', 1), wheel: config.get<string>('wheel', 'auto') },
     });
   }
 
   syncCursor(line: number): void {
-    const id = this.model?.lineIndex[line] ?? null;
+    const id = this.models.get(this.document)?.built?.model.lineIndex[line] ?? null;
     if (id === this.lastCursor) return;
     this.lastCursor = id;
     this.post({ type: 'cursor', id });
+  }
+
+  private toast(message: string): void {
+    this.post({ type: 'toast', message });
   }
 
   private async onMessage(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {
       case 'ready':
         this.ready = true;
-        this.update(parseD2(this.document.getText()));
+        this.update(await this.models.refresh(this.document));
         return;
+      case 'edit':
+        return this.applyEdit(msg.edit);
+      case 'highlight':
+        return this.highlight(msg.range);
+      case 'undo':
+      case 'redo':
+        return this.travel(msg.type);
       case 'navigate': {
         const range = toRange(msg.range);
         const editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === this.document.uri.toString());
@@ -213,6 +361,55 @@ class Preview {
         void vscode.window.showInformationMessage(`Exported ${path.basename(target.fsPath)}`);
         return;
       }
+    }
+  }
+
+  private async applyEdit(op: EditOp): Promise<void> {
+    const state = await this.models.refresh(this.document);
+    if (!state.ok || !state.built) {
+      this.toast('Fix the errors in the D2 file before editing in the diagram');
+      return;
+    }
+    let edits;
+    try {
+      edits = planEdit(this.document.getText(), state.built, op);
+    } catch (err) {
+      if (err instanceof EditError) return this.toast(err.message);
+      throw err;
+    }
+    if (!edits.length) return;
+
+    const before = this.document.getText();
+    const edit = new vscode.WorkspaceEdit();
+    for (const e of edits) {
+      edit.replace(this.document.uri, new vscode.Range(this.document.positionAt(e.start), this.document.positionAt(e.end)), e.text);
+    }
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      this.toast('The edit could not be applied');
+      return;
+    }
+    this.history.push({ before, after: this.document.getText() });
+    this.future.length = 0;
+    this.schedule(this.document, 0);
+  }
+
+  private async travel(direction: 'undo' | 'redo'): Promise<void> {
+    const from = direction === 'undo' ? this.history : this.future;
+    const to = direction === 'undo' ? this.future : this.history;
+    const step = from.pop();
+    if (!step) return this.toast(direction === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
+    const expected = direction === 'undo' ? step.after : step.before;
+    if (this.document.getText() !== expected) {
+      this.history.length = 0;
+      this.future.length = 0;
+      return this.toast('The file changed since that edit; use undo in the editor instead');
+    }
+    const edit = new vscode.WorkspaceEdit();
+    const all = new vscode.Range(this.document.positionAt(0), this.document.positionAt(expected.length));
+    edit.replace(this.document.uri, all, direction === 'undo' ? step.before : step.after);
+    if (await vscode.workspace.applyEdit(edit)) {
+      to.push(step);
+      this.schedule(this.document, 0);
     }
   }
 

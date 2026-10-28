@@ -2,8 +2,9 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { DiagramModel, DiagramNode, Direction, SourceRange } from '../src/model.ts';
-import { layoutScene, type Box, type Scene } from './layout.ts';
+import type { DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange } from '../src/model.ts';
+import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
+import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer, type EdgeStyle } from './render.ts';
 import { exportPng, exportSvg } from './export.ts';
 import { typeOf, plainLabel, type IconName } from './theme.ts';
@@ -35,7 +36,14 @@ interface PersistedState {
 }
 
 type HostMessage =
-  | { type: 'update'; uri: string; model: DiagramModel; fileName: string; config?: { defaultDepth?: number; wheel?: string } }
+  | {
+      type: 'update';
+      uri: string;
+      model: DiagramModel;
+      fileName: string;
+      config?: { defaultDepth?: number; wheel?: string };
+    }
+  | { type: 'toast'; message: string }
   | { type: 'cursor'; id: string | null }
   | { type: 'command'; command: 'fit' | 'export-svg' | 'export-png' };
 
@@ -59,6 +67,9 @@ app.innerHTML = `
       <nav class="crumbs"></nav>
     </div>
     <div class="toolbar glass">
+      <button class="icon-btn" data-action="undo" title="Undo (⌘Z)">${iconSvg('undo', 16)}</button>
+      <button class="icon-btn" data-action="redo" title="Redo (⇧⌘Z)">${iconSvg('redo', 16)}</button>
+      <span class="sep"></span>
       <div class="segmented" title="Detail level">
         <span class="seg-label">Level</span>
         <button data-level="1">1</button><button data-level="2">2</button><button data-level="3">3</button><button data-level="0">All</button>
@@ -86,6 +97,7 @@ app.innerHTML = `
       <button class="icon-btn" data-action="minimap" title="Toggle minimap (M)">${iconSvg('map', 16)}</button>
     </div>
     <div class="toast"></div>
+    <button class="error-banner glass"></button>
     <div class="empty-state">
       <div class="empty-icon">${iconSvg('layers', 28)}</div>
       <div class="empty-title">Nothing to show yet</div>
@@ -116,7 +128,7 @@ const view = {
   selected: null as string | null,
   hover: null as string | null,
   cursor: null as string | null,
-  sidebar: saved?.sidebar ?? true,
+  sidebar: saved?.sidebar ?? false,
   minimap: saved?.minimap ?? true,
   edgeStyle: (saved?.edgeStyle ?? 'orthogonal') as EdgeStyle,
   direction: saved?.direction ?? null,
@@ -137,7 +149,7 @@ const renderer = new Renderer(world, {
     if (id && (ev.metaKey || ev.ctrlKey)) goToSource(id);
     setSelected(id);
   },
-  activate: (id) => activate(id),
+  activate: (id, ev) => activate(id, ev),
   toggle: (id) => toggleCollapse(id),
   drill: (id) => drillInto(id),
   up: () => goUp(),
@@ -145,6 +157,7 @@ const renderer = new Renderer(world, {
     view.hover = id;
     applyHighlight();
   },
+  contextMenu: (id, ev) => openContextMenu(id, ev),
 });
 renderer.edgeStyle = view.edgeStyle;
 
@@ -185,6 +198,7 @@ svg.addEventListener(
   'wheel',
   (ev) => {
     ev.preventDefault();
+    closeInlineRename(true);
     const trackpadPan = ev.deltaX !== 0 || (ev.deltaMode === 0 && !Number.isInteger(ev.deltaY)) || Math.abs(ev.deltaY) < 40;
     const pan = !ev.ctrlKey && !ev.metaKey && (view.wheel === 'pan' || (view.wheel === 'auto' && trackpadPan));
     const t = currentTransform();
@@ -329,26 +343,18 @@ async function refresh(opts: { animate?: boolean; fit?: 'all' | string; anchor?:
 
 // -------------------------------------------------------------- navigation
 
-function activate(id: string): void {
+// Double click: rename leaves, connections and group titles; navigate containers.
+function activate(id: string, ev?: MouseEvent): void {
+  if (id.startsWith('edge:')) return renameElement(id);
   const v = graph?.nodes.get(id);
   if (!v || !model) return;
-  if (v.context) {
-    reveal(id);
-    return;
+  if (v.context) return reveal(id);
+  if (v.collapsed) return toggleCollapse(id);
+  if (v.kind === 'group') {
+    if ((ev?.target as Element | undefined)?.closest?.('.group-header')) return renameElement(id);
+    return v.frame ? goUp() : drillInto(id);
   }
-  if (v.collapsed) {
-    toggleCollapse(id);
-    return;
-  }
-  if (v.kind === 'group' && !v.frame) {
-    drillInto(id);
-    return;
-  }
-  if (v.frame) {
-    goUp();
-    return;
-  }
-  goToSource(id);
+  renameElement(id);
 }
 
 function drillInto(id: string): void {
@@ -429,8 +435,19 @@ function visibleFor(id: string): string | null {
 
 // ---------------------------------------------------------------- highlight
 
+// Selecting an element highlights its declaration in the editor.
+let highlighted: string | null = null;
+function syncSourceHighlight(): void {
+  if (view.selected === highlighted) return;
+  highlighted = view.selected;
+  const range = view.selected ? rangeOf(view.selected) : undefined;
+  const known = range && (range.line || range.col || range.endLine || range.endCol);
+  vscode.postMessage({ type: 'highlight', range: known ? range : null });
+}
+
 function applyHighlight(): void {
   if (!graph || !model) return;
+  syncSourceHighlight();
   const related = new Set<string>();
   const activeEdges = new Set<string>();
   const hotEdges = new Set<string>();
@@ -632,15 +649,36 @@ searchInput.addEventListener('keydown', (ev) => {
 
 // ------------------------------------------------------------------ details
 
+const SHAPES: [string, string, IconName][] = [
+  ['rectangle', 'Service', 'server'],
+  ['person', 'Actor', 'person'],
+  ['hexagon', 'Gateway', 'hexagon'],
+  ['cylinder', 'Data store', 'database'],
+  ['queue', 'Queue', 'queue'],
+  ['cloud', 'Cloud service', 'cloud'],
+];
+const FILLS = ['#dbeafe', '#dcfce7', '#fef9c3', '#ffedd5', '#fee2e2', '#f3e8ff', '#e2e8f0', '#334155'];
+
+let detailsFor: string | null = null;
+
 function renderDetails(): void {
   const id = view.selected;
+  // Don't rebuild the form under the cursor while the user is typing in it.
+  const typing = document.activeElement?.matches('.details input, .details textarea');
+  if (id === detailsFor && typing) return;
+  detailsFor = id;
   if (!id || !model) {
     detailsEl.classList.remove('open');
     return;
   }
+  const dis = model.valid === false ? 'disabled' : '';
+  const paused = model.valid === false ? '<p class="d-note warn">Editing is paused until the D2 file compiles again.</p>' : '';
+  const close = `<button class="icon-btn" data-action="close-details" title="Close">${iconSvg('close', 14)}</button>`;
+
   if (id.startsWith('edge:')) {
     const e = findVEdge(id.slice(5));
     if (!e) return detailsEl.classList.remove('open');
+    const direct = e.implied ? undefined : e.edges[0];
     const conn = e.edges
       .map(
         (x) => `<button class="conn" data-goto-edge="${esc(x.id)}">
@@ -653,18 +691,17 @@ function renderDetails(): void {
       <div class="d-head">
         <div class="d-tile" style="--accent:#64748b">${iconSvg('arrowRight', 18)}</div>
         <div class="d-titles"><div class="d-type">${e.implied ? 'Implied connection' : 'Connection'}</div>
-        <div class="d-title">${esc(e.label ?? 'Unlabeled')}</div></div>
-        <button class="icon-btn" data-action="close-details" title="Close">${iconSvg('close', 14)}</button>
+        ${direct ? `<input class="d-title-input" data-field="edge-label" value="${esc(direct.label ?? '')}" placeholder="Add a label" spellcheck="false" ${dis} />` : `<div class="d-title">${esc(e.label ?? 'Unlabeled')}</div>`}</div>
+        ${close}
       </div>
       <div class="d-route">
         <button class="pill" data-reveal="${esc(e.source)}">${esc(nameOf(e.source))}</button>
-        <span>${iconSvg(e.srcArrow && e.dstArrow ? 'expand' : 'arrowRight', 14)}</span>
+        <span>${iconSvg(e.srcArrow && e.dstArrow ? 'bidirectional' : 'arrowRight', 14)}</span>
         <button class="pill" data-reveal="${esc(e.target)}">${esc(nameOf(e.target))}</button>
       </div>
-      ${e.implied ? `<p class="d-note">Lifted from ${e.edges.length} connection${e.edges.length === 1 ? '' : 's'} between nested elements.</p>` : ''}
-      <div class="d-section-title">Underlying connections</div>
-      <div class="conn-list">${conn}</div>
-      <div class="d-actions"><button class="btn-primary" data-action="source">${iconSvg('source', 14)}Go to source</button></div>`;
+      ${direct ? '' : `<p class="d-note">Lifted from ${e.edges.length} connection${e.edges.length === 1 ? '' : 's'} between nested elements. Expand to edit their labels.</p>
+      <div class="d-section-title">Underlying connections</div><div class="conn-list">${conn}</div>`}
+      ${paused}`;
     detailsEl.classList.add('open');
     return;
   }
@@ -677,6 +714,7 @@ function renderDetails(): void {
   const incoming = model.edges.filter((e) => isWithin(model!, e.target, id) && !isWithin(model!, e.source, id));
   const internal = n.children.length ? model.edges.filter((e) => isWithin(model!, e.source, id) && isWithin(model!, e.target, id)).length : 0;
   const isCollapsed = view.collapsed.has(id);
+  const fill = n.style.fill?.toLowerCase();
 
   const connRow = (other: string, label: string | undefined, dir: 'out' | 'in', edgeId: string) =>
     `<button class="conn" data-reveal="${esc(other)}" data-edge="${esc(edgeId)}">
@@ -688,22 +726,31 @@ function renderDetails(): void {
   detailsEl.innerHTML = `
     <div class="d-head">
       <div class="d-tile" style="--accent:${t.accent}">${iconSvg(t.icon, 18)}</div>
-      <div class="d-titles"><div class="d-type">${esc(t.name)}</div><div class="d-title">${esc(firstLine(plainLabel(n.label, n.labelFormat)))}</div></div>
-      <button class="icon-btn" data-action="close-details" title="Close">${iconSvg('close', 14)}</button>
+      <div class="d-titles"><div class="d-type">${esc(t.name)}</div>
+        <input class="d-title-input" data-field="label" value="${esc(n.label)}" placeholder="Name" spellcheck="false" ${dis} /></div>
+      ${close}
     </div>
     ${path.length ? `<div class="d-path">${path.map((p) => `<button class="link" data-reveal="${esc(p)}">${esc(firstLine(model!.nodes[p].label))}</button>`).join(`<span>${iconSvg('chevronRight', 10)}</span>`)}</div>` : ''}
-    ${n.tooltip ? `<p class="d-desc">${esc(n.tooltip)}</p>` : ''}
-    ${n.link ? `<button class="d-link" data-open="${esc(n.link)}">${iconSvg('external', 13)}<span>${esc(n.link)}</span></button>` : ''}
-    <div class="d-actions">
-      <button class="btn-primary" data-action="source">${iconSvg('source', 14)}Source</button>
-      ${n.children.length ? `<button class="btn" data-action="drill">${iconSvg('drill', 14)}Drill in</button>` : ''}
-      ${n.children.length && view.focus !== id ? `<button class="btn" data-action="toggle">${iconSvg(isCollapsed ? 'expand' : 'collapse', 14)}${isCollapsed ? 'Expand' : 'Collapse'}</button>` : ''}
-    </div>
+    <label class="field"><span class="field-label">Description</span>
+      <textarea data-field="tooltip" rows="2" placeholder="What is it responsible for?" ${dis}>${esc(n.tooltip ?? '')}</textarea></label>
+    ${n.fields?.length ? '' : `<div class="field"><span class="field-label">Type</span><div class="shape-grid">${SHAPES.map(([shape, name, icon]) => `<button data-shape="${shape}" title="${name}" class="${n.shape === shape ? 'active' : ''}" ${dis}>${iconSvg(icon, 16)}</button>`).join('')}</div></div>`}
+    <div class="field"><span class="field-label">Color</span><div class="swatches">
+      <button data-fill="" title="Default" class="${fill ? '' : 'active'}" ${dis}>${iconSvg('none', 14)}</button>
+      ${FILLS.map((c) => `<button data-fill="${c}" title="${c}" style="--sw:${c}" class="${fill === c ? 'active' : ''}" ${dis}></button>`).join('')}
+    </div></div>
+    <label class="field"><span class="field-label">Link</span><div class="input-row">
+      <input data-field="link" value="${esc(n.link ?? '')}" placeholder="https://…" spellcheck="false" ${dis} />
+      ${n.link ? `<button class="icon-btn" data-open="${esc(n.link)}" title="Open link">${iconSvg('external', 14)}</button>` : ''}
+    </div></label>
+    ${n.children.length ? `<div class="d-actions">
+      <button class="btn" data-action="drill">${iconSvg('drill', 14)}Drill in</button>
+      ${view.focus !== id ? `<button class="btn" data-action="toggle">${iconSvg(isCollapsed ? 'expand' : 'collapse', 14)}${isCollapsed ? 'Expand' : 'Collapse'}</button>` : ''}
+    </div>` : ''}
+    ${paused}
     ${outgoing.length ? `<div class="d-section-title">Outgoing <span>${outgoing.length}</span></div><div class="conn-list">${outgoing.map((e) => connRow(e.target, e.label, 'out', e.id)).join('')}</div>` : ''}
     ${incoming.length ? `<div class="d-section-title">Incoming <span>${incoming.length}</span></div><div class="conn-list">${incoming.map((e) => connRow(e.source, e.label, 'in', e.id)).join('')}</div>` : ''}
     ${n.children.length ? `<div class="d-section-title">Contains <span>${n.children.length}</span>${internal ? `<em>${internal} internal connection${internal === 1 ? '' : 's'}</em>` : ''}</div>
-      <div class="chip-list">${n.children.map((c) => `<button class="chip" data-reveal="${esc(c)}">${esc(firstLine(model!.nodes[c].label))}</button>`).join('')}</div>` : ''}
-    ${!outgoing.length && !incoming.length && !n.children.length ? '<p class="d-note">No connections.</p>' : ''}`;
+      <div class="chip-list">${n.children.map((c) => `<button class="chip" data-reveal="${esc(c)}">${esc(firstLine(model!.nodes[c].label))}</button>`).join('')}</div>` : ''}`;
   detailsEl.classList.add('open');
 }
 
@@ -714,15 +761,46 @@ detailsEl.addEventListener('click', (ev) => {
   if (el.dataset.reveal) return reveal(el.dataset.reveal);
   if (el.dataset.gotoEdge) return goToSource(`edge:${el.dataset.gotoEdge}`);
   if (el.dataset.open) return vscode.postMessage({ type: 'openLink', url: el.dataset.open });
+  if (el.dataset.shape !== undefined) {
+    const shape = el.dataset.shape;
+    return sendEdit({ op: 'setAttr', id: sel, attr: ['shape'], value: shape === 'rectangle' ? null : shape });
+  }
+  if (el.dataset.fill !== undefined) return sendEdit({ op: 'setAttr', id: sel, attr: ['style', 'fill'], value: el.dataset.fill || null });
   switch (el.dataset.action) {
     case 'close-details':
       return setSelected(null);
-    case 'source':
-      return goToSource(sel);
     case 'drill':
       return drillInto(sel);
     case 'toggle':
       return toggleCollapse(sel);
+  }
+});
+
+// Inputs commit on blur / Enter (textarea: ⌘Enter); Escape reverts.
+detailsEl.addEventListener('change', (ev) => {
+  const el = ev.target as HTMLInputElement | HTMLTextAreaElement;
+  const field = el.dataset.field;
+  const sel = view.selected;
+  if (!field || !sel) return;
+  const value = el.value.trim();
+  if (field === 'label') sendEdit({ op: 'setLabel', id: sel, label: value });
+  else if (field === 'tooltip' || field === 'link') sendEdit({ op: 'setAttr', id: sel, attr: [field], value: value || null });
+  else if (field === 'edge-label') {
+    const e = directEdge(sel);
+    if (e) sendEdit({ op: 'setEdgeLabel', id: e.id, label: value });
+  }
+});
+
+detailsEl.addEventListener('keydown', (ev) => {
+  const el = ev.target as HTMLInputElement | HTMLTextAreaElement;
+  if (!el.matches('input, textarea')) return;
+  if (ev.key === 'Escape') {
+    el.value = el.defaultValue;
+    el.blur();
+    ev.stopPropagation();
+  } else if (ev.key === 'Enter' && (el.tagName === 'INPUT' || ev.metaKey || ev.ctrlKey)) {
+    ev.preventDefault();
+    el.blur();
   }
 });
 
@@ -773,7 +851,7 @@ minimapSvg.addEventListener('pointerdown', (ev) => {
 
 function renderLevelButtons(): void {
   app.querySelectorAll<HTMLButtonElement>('[data-level]').forEach((b) => {
-    b.classList.toggle('active', view.level !== null && Number(b.dataset.level) === view.level);
+    b.classList.toggle('active', Number(b.dataset.level) === activeLevel());
   });
   const dirBtn = $('[data-action="direction"]');
   const dir = view.direction ?? model?.direction ?? 'down';
@@ -782,6 +860,18 @@ function renderLevelButtons(): void {
   $('[data-action="edges"]').innerHTML = iconSvg(view.edgeStyle === 'curved' ? 'curve' : 'orthogonal', 16);
   app.classList.toggle('no-sidebar', !view.sidebar);
   app.classList.toggle('no-minimap', !view.minimap);
+}
+
+// The level whose collapse state is showing; the last one picked wins ties.
+function activeLevel(): number | null {
+  if (!model) return null;
+  const shows = (level: number) => {
+    const want = collapseToLevel(model!, view.focus, level);
+    return want.size === view.collapsed.size && [...want].every((id) => view.collapsed.has(id));
+  };
+  if (view.level !== null && shows(view.level)) return view.level;
+  if (!view.collapsed.size) return 0;
+  return [1, 2, 3].find(shows) ?? null;
 }
 
 function setLevel(level: number): void {
@@ -832,6 +922,9 @@ app.addEventListener('click', (ev) => {
     }
     case 'fit':
       return fitAll();
+    case 'undo':
+    case 'redo':
+      return vscode.postMessage({ type: el.dataset.action });
   }
 });
 
@@ -841,6 +934,17 @@ document.addEventListener('pointerdown', (ev) => {
 
 svg.addEventListener('click', () => {
   if (view.selected) setSelected(null);
+});
+
+// Element and edge handlers stop propagation, so this only fires on empty canvas.
+svg.addEventListener('contextmenu', (ev) => {
+  ev.preventDefault();
+  openContextMenu(null, ev);
+});
+
+$('.error-banner').addEventListener('click', () => {
+  const issue = model?.issues[0];
+  if (issue) vscode.postMessage({ type: 'navigate', range: issue.range });
 });
 
 async function doExport(format: 'svg' | 'png'): Promise<void> {
@@ -879,11 +983,20 @@ document.addEventListener('keydown', (ev) => {
     searchInput.select();
     return;
   }
+  if (mod && (ev.key === 'z' || ev.key === 'Z' || ev.key === 'y')) {
+    ev.preventDefault();
+    vscode.postMessage({ type: ev.key === 'y' || ev.shiftKey ? 'redo' : 'undo' });
+    return;
+  }
   if (mod) return;
   switch (ev.key) {
     case 'f':
     case 'F':
       return fitAll();
+    case 'F2':
+      if (view.selected) renameElement(view.selected);
+      return;
+
     case '+':
     case '=':
       return zoomBy(1.4);
@@ -954,6 +1067,118 @@ function arrowKey(key: string, fast: boolean): void {
   }
 }
 
+// ------------------------------------------------------------------ editing
+
+// Visual edits are limited to texts and appearance; structure is edited in the D2 file.
+function sendEdit(edit: EditOp): void {
+  if (model?.valid === false) return toast('Fix the errors in the D2 file to edit the diagram');
+  vscode.postMessage({ type: 'edit', edit });
+}
+
+function directEdge(selection: string): DiagramEdge | undefined {
+  const e = selection.startsWith('edge:') ? findVEdge(selection.slice(5)) : undefined;
+  return e && !e.implied ? e.edges[0] : undefined;
+}
+
+function renameElement(id: string): void {
+  if (model?.valid === false) return toast('Fix the errors in the D2 file to edit the diagram');
+  const k = currentTransform().k;
+  if (id.startsWith('edge:')) {
+    const e = directEdge(id);
+    const ve = findVEdge(id.slice(5));
+    if (!e || !ve) return;
+    const label = world.querySelector(`g.edge-label[data-id="${CSS.escape(ve.id)}"] text`);
+    const line = world.querySelector<SVGPathElement>(`g.edge[data-id="${CSS.escape(ve.id)}"] path.edge-line`);
+    let anchor: { getBoundingClientRect(): DOMRect } | null = label;
+    if (!anchor && line) {
+      const p = line.getPointAtLength(line.getTotalLength() / 2);
+      const m = line.getScreenCTM()!;
+      const x = p.x * m.a + p.y * m.c + m.e;
+      const y = p.x * m.b + p.y * m.d + m.f;
+      anchor = { getBoundingClientRect: () => new DOMRect(x - 50, y - 10, 100, 20) };
+    }
+    if (!anchor) return;
+    startInlineRename({
+      anchor: anchor as Element,
+      value: e.label ?? '',
+      scale: k,
+      fontSize: 12,
+      minWidth: 120,
+      placeholder: 'Label',
+      onCommit: (label) => sendEdit({ op: 'setEdgeLabel', id: e.id, label }),
+    });
+    return;
+  }
+  const n = model?.nodes[id];
+  const g = world.querySelector(`[data-id="${CSS.escape(id)}"]`);
+  if (!n || !g) {
+    setSelected(id);
+    detailsEl.querySelector<HTMLInputElement>('.d-title-input')?.focus();
+    return;
+  }
+  const isGroup = g.classList.contains('group');
+  const text = g.querySelector('text.group-title, text.title, text.table-title, text.free-text') ?? g;
+  startInlineRename({
+    anchor: text,
+    value: n.label,
+    scale: k,
+    fontSize: isGroup ? 15 : 14,
+    minWidth: isGroup ? 220 : CARD.width - CARD.pad * 2 - CARD.icon - CARD.gap,
+    placeholder: 'Name',
+    onCommit: (label) => sendEdit({ op: 'setLabel', id, label }),
+  });
+}
+
+function openContextMenu(id: string | null, ev: MouseEvent): void {
+  if (!model) return;
+  const ro = model.valid === false;
+  let items: (MenuItem | 'sep')[];
+  if (!id) {
+    items = [
+      { label: 'Undo', icon: 'undo', hint: '⌘Z', run: () => vscode.postMessage({ type: 'undo' }) },
+      { label: 'Redo', icon: 'redo', hint: '⇧⌘Z', run: () => vscode.postMessage({ type: 'redo' }) },
+      'sep',
+      { label: 'Fit to screen', icon: 'fit', hint: 'F', run: () => fitAll() },
+    ];
+  } else if (id.startsWith('edge:')) {
+    setSelected(id);
+    const e = directEdge(id);
+    items = [
+      { label: 'Edit label', icon: 'pencil', hint: 'F2', disabled: ro || !e, run: () => renameElement(id) },
+      { label: 'Go to source', icon: 'source', run: () => goToSource(id) },
+    ];
+  } else {
+    setSelected(id);
+    const n = model.nodes[id];
+    const v = graph?.nodes.get(id);
+    items = [
+      { label: 'Rename', icon: 'pencil', hint: 'F2', disabled: ro, run: () => renameElement(id) },
+      'sep',
+      ...(n?.children.length
+        ? [
+            { label: 'Drill in', icon: 'drill' as IconName, run: () => drillInto(id) },
+            ...(v && !v.frame
+              ? [{ label: v.collapsed ? 'Expand' : 'Collapse', icon: (v.collapsed ? 'expand' : 'collapse') as IconName, run: () => toggleCollapse(id) }]
+              : []),
+          ]
+        : []),
+      { label: 'Go to source', icon: 'source', hint: '⌘-click', run: () => goToSource(id) },
+    ];
+  }
+  showMenu(ev.clientX, ev.clientY, items);
+}
+
+function renderBanner(): void {
+  const banner = $('.error-banner');
+  const invalid = model?.valid === false && !!model.issues.length;
+  app.classList.toggle('readonly', model?.valid === false);
+  banner.classList.toggle('show', invalid);
+  if (invalid) {
+    const issue = model!.issues[0];
+    banner.innerHTML = `${iconSvg('warning', 14)}<span><b>Line ${issue.range.line + 1}:</b> ${esc(issue.message)}</span><em>Showing the last valid diagram</em>`;
+  }
+}
+
 // -------------------------------------------------------------------- misc
 
 let toastTimer: number | undefined;
@@ -995,16 +1220,22 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       const first = !model;
       model = msg.model;
       docUri = msg.uri;
+      renderBanner();
       $('.file-name').textContent = msg.fileName;
       if (msg.config?.wheel) view.wheel = msg.config.wheel;
-      if (first && !saved && msg.config?.defaultDepth) {
-        view.collapsed = collapseToLevel(model, null, msg.config.defaultDepth);
-        view.level = msg.config.defaultDepth;
+      if (first && !saved) {
+        // Open at the top level (systems collapsed), like IcePanel's context view.
+        const depth = msg.config?.defaultDepth ?? 1;
+        view.collapsed = collapseToLevel(model, null, depth);
+        view.level = depth;
       }
       if (first) for (const id of model.roots) treeOpen.add(id);
       void refresh({ animate: true });
       break;
     }
+    case 'toast':
+      toast(msg.message);
+      break;
     case 'cursor':
       view.cursor = msg.id;
       applyHighlight();

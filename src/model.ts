@@ -36,7 +36,7 @@ export interface DiagramNode {
 }
 
 export interface DiagramEdge {
-  id: string;
+  id: string; // the compiler's connection id, e.g. "shop.(web -> api)[0]"
   source: string;
   target: string;
   label?: string;
@@ -56,12 +56,27 @@ export interface ParseIssue {
   range: SourceRange;
 }
 
+// Visual edits requested by the webview; the host turns them into text edits.
+// Only texts and appearance are editable: structure lives in the D2 source.
+export type EditOp =
+  | { op: 'setLabel'; id: string; label: string }
+  | { op: 'setAttr'; id: string; attr: string[]; value: string | null } // tooltip, link, shape, icon, style.*
+  | { op: 'setEdgeLabel'; id: string; label: string };
+
+export interface TextEdit {
+  start: number; // UTF-16 offsets into the document
+  end: number;
+  text: string;
+}
+
 export interface DiagramModel {
   direction: Direction;
   nodes: Record<string, DiagramNode>;
   roots: string[];
   edges: DiagramEdge[];
   issues: ParseIssue[];
+  // false when the last compile failed and this is the last good model
+  valid?: boolean;
   // line -> id of the element declared on that line (node id or "edge:<id>")
   lineIndex: Record<number, string>;
 }

@@ -16,6 +16,7 @@ export interface RenderHandlers {
   drill(id: string): void; // focus a container
   up(): void; // leave the current focus
   hover(id: string | null): void;
+  contextMenu(id: string | null, ev: MouseEvent): void; // id is a node id or "edge:<id>"
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -151,7 +152,12 @@ export class Renderer {
           this.on.activate(d.v.id, ev);
         })
         .on('mouseenter', (_ev: MouseEvent, d: SNode) => this.on.hover(d.v.id))
-        .on('mouseleave', () => this.on.hover(null));
+        .on('mouseleave', () => this.on.hover(null))
+        .on('contextmenu', (ev: MouseEvent, d: SNode) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          this.on.contextMenu(d.v.id, ev);
+        });
     }
 
     // ------------------------------------------------------------- edges
@@ -214,12 +220,7 @@ export class Renderer {
           };
         });
       })
-      .on('click', (ev: MouseEvent, d: SEdge) => {
-        ev.stopPropagation();
-        this.on.select(`edge:${d.v.id}`, ev);
-      })
-      .on('mouseenter', (_ev: MouseEvent, d: SEdge) => this.on.hover(`edge:${d.v.id}`))
-      .on('mouseleave', () => this.on.hover(null));
+      .call((sel) => this.edgeEvents(sel));
 
     edgesEnter
       .transition()
@@ -255,12 +256,7 @@ export class Renderer {
         g.select('rect').attr('width', l.w).attr('height', l.h);
         g.select('text').attr('x', l.w / 2).attr('y', l.h / 2).text(truncate(l.text, 12, 500, l.w - 16));
       })
-      .on('click', (ev: MouseEvent, d: SEdge) => {
-        ev.stopPropagation();
-        this.on.select(`edge:${d.v.id}`, ev);
-      })
-      .on('mouseenter', (_ev: MouseEvent, d: SEdge) => this.on.hover(`edge:${d.v.id}`))
-      .on('mouseleave', () => this.on.hover(null));
+      .call((sel) => this.edgeEvents(sel));
     labelsAll
       .transition(t as never)
       .style('opacity', 1)
@@ -280,6 +276,25 @@ export class Renderer {
       .attr('text-anchor', (d) => (d.near.endsWith('left') ? 'start' : d.near.endsWith('right') ? 'end' : 'middle'))
       .attr('x', (d) => (d.near.endsWith('left') ? b.x + 40 : d.near.endsWith('right') ? b.x + b.w - 40 : b.x + b.w / 2))
       .attr('y', (d) => (d.near.startsWith('bottom') ? b.y + b.h + 24 : b.y - 8));
+  }
+
+  private edgeEvents(sel: Sel): void {
+    sel
+      .on('click', (ev: MouseEvent, d: SEdge) => {
+        ev.stopPropagation();
+        this.on.select(`edge:${d.v.id}`, ev);
+      })
+      .on('dblclick', (ev: MouseEvent, d: SEdge) => {
+        ev.stopPropagation();
+        this.on.activate(`edge:${d.v.id}`, ev);
+      })
+      .on('contextmenu', (ev: MouseEvent, d: SEdge) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this.on.contextMenu(`edge:${d.v.id}`, ev);
+      })
+      .on('mouseenter', (_ev: MouseEvent, d: SEdge) => this.on.hover(`edge:${d.v.id}`))
+      .on('mouseleave', () => this.on.hover(null));
   }
 
   // ------------------------------------------------------------- drawing
@@ -428,6 +443,9 @@ export class Renderer {
     const head = g.append('g').attr('transform', `translate(${TABLE.pad},${(TABLE.header - 18) / 2})`);
     icon(head, 'table', 18);
     head.append('text').attr('class', 'table-title').attr('x', 26).attr('y', 14).text(v.node.label);
+    if (!v.node.fields?.length) {
+      g.append('text').attr('class', 'table-empty').attr('x', d.w / 2).attr('y', TABLE.header + TABLE.row / 2 + 4).attr('text-anchor', 'middle').text('No columns yet');
+    }
 
     (v.node.fields ?? []).forEach((f, i) => {
       const y = TABLE.header + i * TABLE.row;

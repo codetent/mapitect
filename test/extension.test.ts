@@ -1,5 +1,5 @@
 // Smoke test for the extension host bundle against a minimal stub of the vscode API.
-// Requires `npm run build` first (the `pretest` script does that).
+// Uses the real D2 compiler copied to dist/d2; requires `npm run build` (run by `pretest`).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -22,12 +22,30 @@ function harness(initialText: string) {
   const diagnostics = new Map<string, any[]>();
   let onMessage: Fn = () => {};
   let text = initialText;
+  let version = 1;
 
+  const decorations: any[][] = [];
+  const editor = {
+    get document() {
+      return doc;
+    },
+    setDecorations: (_type: unknown, ranges: any[]) => decorations.push(ranges),
+    revealRange() {},
+  };
   const doc = {
     uri: makeUri('/tmp/archer/diagram.d2'),
     fileName: '/tmp/archer/diagram.d2',
     languageId: 'd2',
+    get version() {
+      return version;
+    },
     getText: () => text,
+    positionAt: (offset: number) => ({ offset }),
+  };
+  const setText = (next: string) => {
+    text = next;
+    version++;
+    listeners.change?.({ document: doc });
   };
   const panel = {
     active: true,
@@ -48,6 +66,30 @@ function harness(initialText: string) {
     return { dispose() {} };
   };
 
+  class Range {
+    args: any[];
+    constructor(...args: any[]) {
+      this.args = args;
+    }
+  }
+  class WorkspaceEdit {
+    edits: { range: Range; text: string }[] = [];
+    replace(_uri: unknown, range: Range, newText: string) {
+      this.edits.push({ range, text: newText });
+    }
+  }
+  class EventEmitter {
+    listeners: Fn[] = [];
+    event = (fn: Fn) => {
+      this.listeners.push(fn);
+      return { dispose() {} };
+    };
+    fire(v: unknown) {
+      for (const l of this.listeners) l(v);
+    }
+    dispose() {}
+  }
+
   const vscode = {
     languages: {
       createDiagnosticCollection: () => ({
@@ -63,7 +105,7 @@ function harness(initialText: string) {
       },
     },
     workspace: {
-      textDocuments: [doc],
+      textDocuments: [] as unknown[],
       workspaceFolders: [],
       openTextDocument: async () => doc,
       getConfiguration: () => ({ get: (_k: string, d: unknown) => d }),
@@ -71,12 +113,21 @@ function harness(initialText: string) {
       onDidCloseTextDocument: on('close'),
       onDidChangeTextDocument: on('change'),
       onDidChangeConfiguration: on('config'),
+      applyEdit: async (edit: WorkspaceEdit) => {
+        let next = text;
+        const sorted = [...edit.edits].sort((a, b) => b.range.args[0].offset - a.range.args[0].offset);
+        for (const e of sorted) next = next.slice(0, e.range.args[0].offset) + e.text + next.slice(e.range.args[1].offset);
+        setText(next);
+        return true;
+      },
     },
     window: {
       activeTextEditor: { document: doc },
-      visibleTextEditors: [],
+      visibleTextEditors: [editor] as unknown[],
       createWebviewPanel: () => panel,
       onDidChangeTextEditorSelection: on('selection'),
+      onDidChangeVisibleTextEditors: on('visible'),
+      createTextEditorDecorationType: () => ({ dispose() {} }),
       registerWebviewPanelSerializer: () => ({ dispose() {} }),
       showWarningMessage() {},
     },
@@ -86,7 +137,16 @@ function harness(initialText: string) {
       joinPath: (u: any, ...p: string[]) => makeUri(path.join(u.fsPath, ...p)),
     },
     ViewColumn: { Active: -1, Beside: -2, One: 1 },
+    ThemeColor: class {
+      id: string;
+      constructor(id: string) {
+        this.id = id;
+      }
+    },
+    OverviewRulerLane: { Full: 7 },
+    TextEditorRevealType: { InCenterIfOutsideViewport: 2 },
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2 },
+    FileType: { File: 1, Directory: 2 },
     Diagnostic: class {
       source?: string;
       range: unknown;
@@ -98,12 +158,9 @@ function harness(initialText: string) {
         this.severity = severity;
       }
     },
-    Range: class {
-      args: number[];
-      constructor(...args: number[]) {
-        this.args = args;
-      }
-    },
+    Range,
+    WorkspaceEdit,
+    EventEmitter,
   };
 
   return {
@@ -114,45 +171,92 @@ function harness(initialText: string) {
     diagnostics,
     panel,
     doc,
+    text: () => text,
+    decorations,
+    editor,
     send: (m: unknown) => onMessage(m),
-    setText: (t: string) => (text = t),
+    setText,
   };
 }
 
-test('extension opens a preview, streams updates and syncs the cursor', async () => {
+async function until<T>(fn: () => T | undefined, what: string, ms = 5000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = fn();
+    if (v) return v;
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+test('extension compiles with the official D2 build, applies text edits and syncs the cursor', async () => {
   const h = harness('api -> db: queries\ndb.shape: cylinder\n');
   const original = Module._load;
   Module._load = function (req: string, ...rest: unknown[]) {
     return req === 'vscode' ? h.vscode : original.call(this, req, ...rest);
   };
+  let ext: { activate: Fn; deactivate: Fn } | undefined;
   try {
     delete require.cache[require.resolve(path.join(root, 'dist/extension.js'))];
-    const ext = require(path.join(root, 'dist/extension.js'));
-    ext.activate({ subscriptions: [], extensionUri: makeUri(root) });
+    ext = require(path.join(root, 'dist/extension.js'));
+    ext!.activate({ subscriptions: [], extensionUri: makeUri(root) });
 
-    assert.ok(h.commands['archer.openPreviewToSide'], 'command registered');
     await h.commands['archer.openPreviewToSide']();
     assert.match(h.panel.webview.html, /Content-Security-Policy/);
-    assert.match(h.panel.webview.html, /dist\/webview\.js/);
-
     await h.send({ type: 'ready' });
-    const update = h.posted.find((m) => m.type === 'update');
-    assert.ok(update, 'update posted after ready');
-    assert.deepEqual(Object.keys(update.model.nodes).sort(), ['api', 'db']);
-    assert.equal(update.fileName, 'diagram.d2');
+    const first = await until(() => h.posted.find((m) => m.type === 'update'), 'first update');
+    assert.deepEqual(Object.keys(first.model.nodes).sort(), ['api', 'db']);
+    assert.equal(first.model.nodes.db.shape, 'cylinder');
+    assert.equal(first.model.edges[0].id, '(api -> db)[0]');
 
     h.listeners.selection({ textEditor: { document: h.doc }, selections: [{ active: { line: 1 } }] });
     assert.deepEqual(h.posted.at(-1), { type: 'cursor', id: 'db' });
 
-    h.setText('api -> db\nweb: { shape: blob }\n');
-    h.listeners.change({ document: h.doc });
-    await new Promise((r) => setTimeout(r, 250));
-    const last = h.posted.filter((m) => m.type === 'update').at(-1);
-    assert.ok(last.model.nodes.web, 'edited model pushed');
+    // Selecting an element in the diagram highlights its source lines.
+    await h.send({ type: 'highlight', range: first.model.nodes.db.range });
+    assert.deepEqual(h.decorations.at(-1)?.[0]?.args, [1, 0, 1, 18]);
+    await h.send({ type: 'highlight', range: null });
+    assert.deepEqual(h.decorations.at(-1), []);
+
+    // …but never opens the file when no editor shows it.
+    let opened = false;
+    (h.vscode.window as any).showTextDocument = async () => {
+      opened = true;
+    };
+    h.vscode.window.visibleTextEditors = [];
+    const before = h.decorations.length;
+    await h.send({ type: 'highlight', range: first.model.nodes.api.range });
+    assert.equal(opened, false);
+    assert.equal(h.decorations.length, before);
+    h.vscode.window.visibleTextEditors = [h.editor];
+
+    // A visual edit becomes a document edit and a fresh model.
+    await h.send({ type: 'edit', edit: { op: 'setLabel', id: 'api', label: 'Public API' } });
+    assert.equal(h.text(), 'api -> db: queries\ndb.shape: cylinder\napi: Public API\n');
+    await until(() => h.posted.find((m) => m.type === 'update' && m.model.nodes.api?.label === 'Public API'), 'renamed update');
+
+    await h.send({ type: 'undo' });
+    assert.equal(h.text(), 'api -> db: queries\ndb.shape: cylinder\n');
+
+    // Structure is edited in the source only.
+    await h.send({ type: 'edit', edit: { op: 'addNode', parent: null, label: 'Web App' } });
+    assert.match(h.posted.at(-1).message, /in the D2 file/);
+    assert.equal(h.text(), 'api -> db: queries\ndb.shape: cylinder\n');
+
+    // Compile errors become diagnostics; the preview keeps the last good model.
+    h.setText('api -> db\nweb: {\n');
+    const broken = await until(
+      () => h.posted.find((m) => m.type === 'update' && m.model.valid === false),
+      'invalid update',
+    );
+    assert.ok(broken.model.nodes.api, 'last good model kept');
     const diags = h.diagnostics.get(h.doc.uri.toString())!;
-    assert.equal(diags.length, 1);
-    assert.match(diags[0].message, /Unknown shape/);
+    assert.match(diags[0].message, /maps must be terminated/);
+
+    await h.send({ type: 'edit', edit: { op: 'setLabel', id: 'api', label: 'x' } });
+    assert.equal(h.posted.at(-1).type, 'toast', 'edits are refused while the file does not compile');
   } finally {
     Module._load = original;
+    await ext?.deactivate();
   }
 });
