@@ -28,6 +28,7 @@ The diagram lets you change **texts** and **how nodes look**. Structure stays in
 - **Rename**: double-click an element, a group's title or a connection label, or press `F2`.
 - **Details panel**: edit an element's name, description (`tooltip`) and link, pick its type (service, actor, gateway, data store, queue or cloud service), or set a fill color. For a connection, edit its label. Other D2 shapes still display, but you set them in the code.
 - **Right-click** an element or connection for *Rename* / *Edit label*, *Go to source* and navigation.
+- **Layout direction**: the arrow button in the toolbar cycles right → down → left → up and writes it to the file as the board's `direction:`.
 - **Undo / redo** visual edits with `⌘Z` / `⇧⌘Z` in the diagram. If you've typed in the file since then, use the editor's own undo instead.
 
 Editing pauses while the file has compile errors, because the source positions would be out of date. Positions are always computed automatically.

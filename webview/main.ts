@@ -32,7 +32,6 @@ interface PersistedState {
   sidebar: boolean;
   minimap: boolean;
   edgeStyle: EdgeStyle;
-  direction: Direction | null;
 }
 
 type HostMessage =
@@ -75,7 +74,7 @@ app.innerHTML = `
         <button data-level="1">1</button><button data-level="2">2</button><button data-level="3">3</button><button data-level="0">All</button>
       </div>
       <span class="sep"></span>
-      <button class="icon-btn" data-action="direction" title="Layout direction">${iconSvg('arrowRight', 16)}</button>
+      <button class="icon-btn" data-action="direction" title="Layout direction (writes direction: … to the file)">${iconSvg('arrowRight', 16)}</button>
       <button class="icon-btn" data-action="edges" title="Edge style">${iconSvg('orthogonal', 16)}</button>
       <span class="sep"></span>
       <div class="menu-wrap">
@@ -131,7 +130,6 @@ const view = {
   sidebar: saved?.sidebar ?? false,
   minimap: saved?.minimap ?? true,
   edgeStyle: (saved?.edgeStyle ?? 'orthogonal') as EdgeStyle,
-  direction: saved?.direction ?? null,
   level: null as number | null,
   wheel: 'auto',
 };
@@ -171,7 +169,6 @@ function persist(): void {
     sidebar: view.sidebar,
     minimap: view.minimap,
     edgeStyle: view.edgeStyle,
-    direction: view.direction,
   });
 }
 
@@ -233,6 +230,7 @@ function onCameraChange(t: ZoomTransform): void {
   zoomLabel.textContent = `${Math.round(t.k * 100)}%`;
   world.classList.toggle('far', t.k < 0.45);
   world.classList.toggle('very-far', t.k < 0.22);
+  world.style.setProperty('--inv-k', String(1 / t.k)); // keeps far-out labels at a fixed screen size
   let step = 24;
   while (step * t.k < 14) step *= 2;
   const size = step * t.k;
@@ -295,7 +293,7 @@ async function refresh(opts: { animate?: boolean; fit?: 'all' | string; anchor?:
   const g = buildView(model, view);
   let s: Scene;
   try {
-    s = await layoutScene(g, view.direction ?? model.direction);
+    s = await layoutScene(g, model.direction);
   } catch (err) {
     console.error(err);
     toast(`Layout failed: ${(err as Error).message}`);
@@ -487,7 +485,7 @@ function applyHighlight(): void {
 
   world.classList.toggle('has-selection', hasSel);
   select(world)
-    .selectAll<SVGGElement, unknown>('g.node, g.group')
+    .selectAll<SVGGElement, unknown>('g.node, g.group, g.cover')
     .each(function () {
       const id = this.getAttribute('data-id')!;
       const isGroup = this.classList.contains('group');
@@ -854,9 +852,8 @@ function renderLevelButtons(): void {
     b.classList.toggle('active', Number(b.dataset.level) === activeLevel());
   });
   const dirBtn = $('[data-action="direction"]');
-  const dir = view.direction ?? model?.direction ?? 'down';
+  const dir = model?.direction ?? 'down';
   dirBtn.style.transform = `rotate(${{ right: 0, down: 90, left: 180, up: 270 }[dir]}deg)`;
-  dirBtn.classList.toggle('active', view.direction !== null);
   $('[data-action="edges"]').innerHTML = iconSvg(view.edgeStyle === 'curved' ? 'curve' : 'orthogonal', 16);
   app.classList.toggle('no-sidebar', !view.sidebar);
   app.classList.toggle('no-minimap', !view.minimap);
@@ -899,11 +896,10 @@ app.addEventListener('click', (ev) => {
       renderLevelButtons();
       return persist();
     case 'direction': {
+      // Written to the file as `direction: …`; the diagram follows the next compile.
       const order: Direction[] = ['right', 'down', 'left', 'up'];
-      const cur = view.direction ?? model?.direction ?? 'down';
-      view.direction = order[(order.indexOf(cur) + 1) % 4];
-      if (view.direction === model?.direction) view.direction = null;
-      return void refresh({ animate: true, fit: 'all' });
+      const cur = model?.direction ?? 'down';
+      return sendEdit({ op: 'setDirection', value: order[(order.indexOf(cur) + 1) % 4] });
     }
     case 'edges':
       view.edgeStyle = view.edgeStyle === 'curved' ? 'orthogonal' : 'curved';
@@ -954,6 +950,7 @@ async function doExport(format: 'svg' | 'png'): Promise<void> {
   view.hover = null;
   // Snap highlight transitions so computed styles reflect the neutral state.
   world.classList.add('exporting');
+  world.classList.remove('far', 'very-far'); // exports are always the detailed view
   applyHighlight();
   void world.getBoundingClientRect();
   try {
@@ -963,6 +960,7 @@ async function doExport(format: 'svg' | 'png'): Promise<void> {
     toast(`Export failed: ${(err as Error).message}`);
   } finally {
     world.classList.remove('exporting');
+    onCameraChange(currentTransform());
     view.selected = prev;
     applyHighlight();
   }
@@ -1218,6 +1216,7 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
   switch (msg.type) {
     case 'update': {
       const first = !model;
+      const turned = !!model && model.direction !== msg.model.direction;
       model = msg.model;
       docUri = msg.uri;
       renderBanner();
@@ -1230,7 +1229,8 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
         view.level = depth;
       }
       if (first) for (const id of model.roots) treeOpen.add(id);
-      void refresh({ animate: true });
+      // A new direction re-lays out everything, so re-fit.
+      void refresh({ animate: true, fit: turned ? 'all' : undefined });
       break;
     }
     case 'toast':

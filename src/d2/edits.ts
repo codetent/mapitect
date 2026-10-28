@@ -15,6 +15,7 @@ export class EditError extends Error {}
 
 // Attributes the preview may change: descriptive text and how a node looks.
 const EDITABLE_ATTRS = new Set(['tooltip', 'link', 'shape', 'icon']);
+const DIRECTIONS = new Set(['up', 'down', 'left', 'right']);
 // Node types offered in the preview (rectangle is D2's default, written as no shape at all).
 const EDITABLE_SHAPES = new Set(['rectangle', 'person', 'hexagon', 'cylinder', 'queue', 'cloud']);
 
@@ -45,6 +46,8 @@ class Planner {
         return this.setAttr(this.segs(op.id), op.attr, op.value);
       case 'setEdgeLabel':
         return this.setEdgeLabel(op.id, op.label);
+      case 'setDirection':
+        return this.setDirection(op.value);
       default:
         throw new EditError('Add, connect and delete elements in the D2 file');
     }
@@ -146,6 +149,21 @@ class Planner {
     // In sql_table and class shapes children are rows; another shape would turn them into elements.
     const node = this.built.model.nodes[this.built.ids.get(segKey(segs))!];
     if (node?.fields?.length) throw new EditError('Tables and classes keep their shape; change it in the D2 file');
+  }
+
+  // The root `direction:`; added above the first statement when the file has none.
+  private setDirection(value: string): TextEdit[] {
+    if (!DIRECTIONS.has(value)) throw new EditError(`"${value}" is not a direction`);
+    const existing = this.built.index.stmts.filter(
+      (s) => s.kind === 'root' && !s.parent && s.attr!.length === 1 && s.attr![0].toLowerCase() === 'direction',
+    );
+    const last = existing[existing.length - 1];
+    const range = last && valueRange(last.mk.value);
+    if (range) return [this.replace(span(range), value)];
+    const first = this.built.index.stmts.find((s) => !s.parent);
+    if (!first) return [this.append([], `direction: ${value}`)];
+    const ls = this.text.lastIndexOf('\n', first.range.start - 1) + 1;
+    return [this.insert(ls, `direction: ${value}\n\n`)];
   }
 
   private site(id: string) {

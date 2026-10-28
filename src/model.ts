@@ -61,7 +61,8 @@ export interface ParseIssue {
 export type EditOp =
   | { op: 'setLabel'; id: string; label: string }
   | { op: 'setAttr'; id: string; attr: string[]; value: string | null } // tooltip, link, shape, icon, style.*
-  | { op: 'setEdgeLabel'; id: string; label: string };
+  | { op: 'setEdgeLabel'; id: string; label: string }
+  | { op: 'setDirection'; value: Direction }; // the board's layout direction
 
 export interface TextEdit {
   start: number; // UTF-16 offsets into the document

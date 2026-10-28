@@ -26,7 +26,7 @@ export function exportSvg(world: SVGGElement, bounds: Box): string {
   for (const el of clone.querySelectorAll('title')) el.remove();
   dst.forEach((el, i) => {
     const s = src[i] as Element;
-    if (s.matches('.btn, .edge-hit, .far-title, .hit, .link-mark')) el.remove();
+    if (s.matches('.btn, .edge-hit, .far-label, .layer-covers, .hit, .link-mark')) el.remove();
   });
 
   const bg = getComputedStyle(document.querySelector('.stage')!).backgroundColor || '#ffffff';

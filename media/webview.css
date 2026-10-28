@@ -1008,18 +1008,6 @@ g.btn:hover .glyph {
   stroke: var(--fg);
 }
 
-.far-title {
-  font-family: var(--font);
-  font-weight: 700;
-  fill: color-mix(in srgb, var(--accent) 55%, var(--fg));
-  stroke: var(--canvas);
-  stroke-width: 6px;
-  paint-order: stroke;
-  dominant-baseline: middle;
-  pointer-events: none;
-  display: none;
-}
-
 /* nodes */
 
 .node {
@@ -1347,24 +1335,82 @@ g.btn:hover .glyph {
   display: none;
 }
 
-.very-far .node text,
+/* Far out only the outermost elements remain: solid blocks with one readable label each. */
+.very-far .node:not(.outer),
+.very-far .group:not(.outer):not(.frame),
+.very-far .node text:not(.far-label),
 .very-far .group-header,
 .very-far .footer-chip,
-.very-far .icon-tile-g {
+.very-far .icon-tile-g,
+.very-far .stack {
   display: none;
 }
 
-.very-far .far-title {
-  display: block;
-}
-
 .very-far .card {
-  fill: color-mix(in srgb, var(--accent) 30%, var(--card));
+  fill: color-mix(in srgb, var(--accent) 24%, var(--card));
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: calc(1.5px * var(--inv-k, 1));
   filter: none;
 }
 
 .very-far .edge-line {
-  stroke-width: 3;
+  stroke-width: calc(1.5px * var(--inv-k, 1));
+}
+
+.very-far .edge-arrow {
+  stroke-width: calc(1px * var(--inv-k, 1));
+}
+
+.layer-covers {
+  display: none;
+}
+
+.very-far .layer-covers {
+  display: block;
+}
+
+.cover {
+  cursor: pointer;
+}
+
+.cover rect {
+  fill: color-mix(in srgb, var(--accent) 16%, var(--canvas));
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: calc(1.5px * var(--inv-k, 1));
+}
+
+.cover.selected rect,
+.very-far .node.selected .card {
+  stroke: var(--accent);
+  stroke-width: calc(3px * var(--inv-k, 1));
+}
+
+.far-label {
+  display: none;
+  font-family: var(--font);
+  font-size: calc(13px * var(--inv-k, 1));
+  font-weight: 650;
+  fill: var(--fg);
+  stroke: var(--canvas);
+  stroke-width: calc(3px * var(--inv-k, 1));
+  stroke-linejoin: round;
+  paint-order: stroke;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.cover .far-label {
+  font-size: calc(15px * var(--inv-k, 1));
+  font-weight: 700;
+}
+
+.very-far .far-label {
+  display: block;
+}
+
+.has-selection .cover:not(.related):not(.selected) > * {
+  opacity: 0.16;
 }
 
 .exporting,

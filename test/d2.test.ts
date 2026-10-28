@@ -109,6 +109,19 @@ test('appearance edits: shape and any style property', async () => {
   assert.equal(r.model.nodes.db.shape, 'cylinder');
 });
 
+test('setDirection rewrites or adds the root direction', async () => {
+  let r = await edit('direction: right\na -> b\n', { op: 'setDirection', value: 'down' });
+  assert.equal(r.text, 'direction: down\na -> b\n');
+  assert.equal(r.model.direction, 'down');
+  r = await edit('# Header\n\na -> b\nc: {direction: left}\n', { op: 'setDirection', value: 'right' });
+  assert.equal(r.text, '# Header\n\ndirection: right\n\na -> b\nc: {direction: left}\n', 'container directions are left alone');
+  assert.equal(r.model.direction, 'right');
+  r = await edit('', { op: 'setDirection', value: 'up' });
+  assert.equal(r.text, 'direction: up\n');
+  const built = await build('a\n');
+  assert.throws(() => planEdit('a\n', built, { op: 'setDirection', value: 'sideways' as never }), EditError);
+});
+
 test('structural edits are refused: the D2 source owns elements and connections', async () => {
   const text = 'a -> b\nt: {shape: sql_table; id: int}\n';
   const built = await build(text);
