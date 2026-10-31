@@ -81,3 +81,29 @@ export interface DiagramModel {
   // line -> id of the element declared on that line (node id or "edge:<id>")
   lineIndex: Record<number, string>;
 }
+
+// ---------------------------------------------------------------- decisions
+
+// Architecture decision records (MADR) found in per-component folders.
+export type AdrStatus = 'proposed' | 'accepted' | 'rejected' | 'deprecated' | 'superseded' | 'unknown';
+
+export interface Adr {
+  file: string; // absolute path
+  name: string; // file name, e.g. 0002-use-river.md
+  number?: string; // from the file name prefix
+  title: string;
+  status: AdrStatus;
+  statusText?: string; // as written, e.g. "superseded by ADR-0004"
+  date?: string;
+  decisionMakers?: string;
+  consulted?: string;
+  informed?: string;
+  body: string; // Markdown after the title and metadata
+}
+
+export interface AdrIndex {
+  components: Record<string, Adr[]>; // element id -> its decisions, ordered by number
+  unmatched: string[]; // folders that contain ADRs but match no element
+  roots: string[]; // ADR roots from `vars.adr-folders`, as written
+}
+

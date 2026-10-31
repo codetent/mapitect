@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { D2Compiler } from '../src/d2/compiler.ts';
 import type { Built } from '../src/d2/convert.ts';
 import { applyEdits, EditError, planEdit } from '../src/d2/edits.ts';
+import { assignAdrs, scanAdrFolders } from '../src/adr.ts';
 import type { EditOp } from '../src/model.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -34,8 +35,11 @@ async function load(file: string): Promise<Doc> {
 async function snapshot(file: string, doc: Doc) {
   const r = await compiler.compile(doc.text, file);
   if (r.ok) doc.built = r.built;
-  const model = doc.built?.model ?? { direction: 'down', nodes: {}, roots: [], edges: [], lineIndex: {} };
-  return { type: 'update', uri: `file:///${file}`, fileName: file, config: {}, model: { ...model, issues: r.ok ? [] : r.issues, valid: r.ok } };
+  const model = doc.built?.model ?? { direction: 'down', nodes: {}, roots: [], edges: [], lineIndex: {}, issues: [] };
+  // ADRs are read fresh from the folders in `vars.adr-folders` on every snapshot.
+  const roots = doc.built?.adrFolders ?? [];
+  const adrs = assignAdrs(await scanAdrFolders(path.join(root, 'examples'), roots), model, roots);
+  return { type: 'update', uri: `file:///${file}`, fileName: file, config: {}, model: { ...model, issues: r.ok ? [] : r.issues, valid: r.ok }, adrs };
 }
 
 async function api(route: string, body: Record<string, unknown>) {

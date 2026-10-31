@@ -33,6 +33,49 @@ The diagram lets you change **texts** and **how nodes look**. Structure stays in
 
 Editing pauses while the file has compile errors, because the source positions would be out of date. Positions are always computed automatically.
 
+## Architecture decisions
+
+Archer shows [MADR](https://adr.github.io/madr/) decision records next to the elements they belong to.
+List the folders that hold them in the `adr-folders` variable at the top of the `.d2` file, relative
+to the file or absolute. One folder or several:
+
+```d2
+vars: {
+  adr-folders: [adr; ../shared/decisions]
+}
+```
+
+Each folder has one subfolder per component, named after the element, with the ADR files inside:
+
+```
+platform.d2
+adr/
+  gateway/                     # matches the element whose key is "gateway"
+    0001-single-api-gateway.md
+    0002-rest-between-gateway-and-services.md
+  shop.services.orders/        # or the element's full id
+  shop/services/payments/      # or a path mirroring the diagram's nesting
+../shared/decisions/
+  gateway/                     # decisions from every folder are merged per element
+    0001-rate-limits.md
+```
+
+- **On the diagram**: elements with decisions get a badge with their count. Groups list the
+  count in their header.
+- **Details panel**: lists an element's decisions with number, title and status.
+- **Decision reader**: click a decision or a badge to read it, with status, date and
+  decision-makers. `←` / `→` step through the component's decisions, and links between ADRs
+  open in the reader.
+- **Metadata**: MADR 3/4 YAML front matter (`status`, `date`, `decision-makers`, `consulted`,
+  `informed`) or MADR 2 bullets (`* Status: …`). Statuses are shown as accepted, proposed,
+  rejected, deprecated or superseded.
+- **Live**: adding or editing Markdown files, or changing `adr-folders`, updates the preview.
+  Folders that match no element are flagged in the sidebar footer.
+
+Without `adr-folders` no decisions are looked up. `README.md`, `index.md`, `template.md` and
+files starting with `.` or `_` are ignored. `examples/adr` has 18 sample decisions for the
+example diagram.
+
 ## Supported D2
 
 Whatever the official compiler accepts. Imports resolve against other `.d2` files in the same folder (up to two levels deep). Only the main board is shown: `layers`, `scenarios` and `steps` are compiled but not displayed yet. Archer lays diagrams out itself with ELK so it can collapse and drill into them, so `width`, `height`, `top`, `left`, grid settings and the D2 layout engine choice are ignored.
@@ -80,7 +123,9 @@ Code layout:
 - `src/d2/convert.ts`: combines the compiled diagram and that source index into the preview model in `src/model.ts`
 - `src/d2/edits.ts`: turns visual edits (texts and appearance) into text edits
 - `src/extension.ts`: preview panels, compiling, diagnostics, applying edits, undo, cursor sync, export
+- `src/adr.ts`: reads `vars.adr-folders`, finds ADR folders, parses MADR and matches folders to elements
 - `webview/editing.ts`: inline rename and the context menu
+- `webview/decisions.ts`: the decision reader
 - `webview/view.ts`: drill-down focus, collapsing, and lifting edges to visible ancestors
 - `webview/layout.ts`: node sizing and the ELK layered layout
 - `webview/render.ts`: d3 rendering with animated transitions

@@ -17,6 +17,7 @@ export interface RenderHandlers {
   up(): void; // leave the current focus
   hover(id: string | null): void;
   contextMenu(id: string | null, ev: MouseEvent): void; // id is a node id or "edge:<id>"
+  decisions(id: string): void; // the ADR badge was clicked
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -44,6 +45,7 @@ export class Renderer {
   private readonly annotationLayer: Sel;
   scene: Scene | null = null;
   edgeStyle: EdgeStyle = 'orthogonal';
+  adrCounts = new Map<string, number>(); // element id -> number of ADRs
 
   constructor(world: SVGGElement, private readonly on: RenderHandlers) {
     this.root = select(world);
@@ -335,7 +337,9 @@ export class Renderer {
     holder.selectAll('*').remove();
     drawIcon(holder, v.node.icon, v.type.icon, 32, 18);
     header.select('text.group-title').text(v.node.label.replace(/\n/g, ' '));
-    const meta = `${v.type.name}${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}`;
+    const adrs = this.adrCounts.get(v.id) ?? 0;
+    const decisions = adrs ? ` · ${adrs} ADR${adrs === 1 ? '' : 's'}` : '';
+    const meta = `${v.type.name}${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}${decisions}`;
     header.select('text.group-meta').text(meta.toUpperCase());
 
     const toggle = g.select('g.btn-toggle').style('display', nullable(v.frame ? 'none' : null));
@@ -451,6 +455,24 @@ export class Renderer {
       chip.append('text').attr('x', 26).attr('y', 15).text(c.footer);
       const expand = g.append('g').attr('class', 'btn btn-toggle').attr('transform', `translate(${d.w - 40},${d.h - 40})`);
       button(expand, 'expand', 'Expand', () => this.on.toggle(v.id));
+    }
+
+    const adrs = this.adrCounts.get(v.id) ?? 0;
+    if (adrs) {
+      const label = String(adrs);
+      const w = measure(label, 10.5, 650) + 28;
+      const right = d.w - 10 - (v.node.link ? 22 : 0);
+      const badge = g.append('g').attr('class', 'adr-badge').attr('transform', `translate(${right - w},10)`);
+      badge.append('title').text(`${adrs} architecture decision${adrs === 1 ? '' : 's'}`);
+      badge.append('rect').attr('width', w).attr('height', 20).attr('rx', 10);
+      icon(badge, 'decision', 12, 7, 4);
+      badge.append('text').attr('x', 22).attr('y', 10).attr('dy', '0.35em').text(label);
+      badge
+        .on('click', (ev: MouseEvent) => {
+          ev.stopPropagation();
+          this.on.decisions(v.id);
+        })
+        .on('dblclick', (ev: MouseEvent) => ev.stopPropagation());
     }
 
     if (v.node.link) {

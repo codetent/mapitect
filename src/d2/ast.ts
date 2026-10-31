@@ -27,7 +27,7 @@ export interface StringBox {
 
 export interface ValueBox extends StringBox {
   map?: AstMap;
-  array?: { range: string };
+  array?: { range: string; nodes?: ValueBox[] };
   number?: { range: string; raw: string };
   boolean?: { range: string; value: boolean };
   null?: { range: string };

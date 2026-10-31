@@ -25,6 +25,7 @@ function harness(initialText: string) {
   let version = 1;
 
   const decorations: any[][] = [];
+  const watched: string[] = []; // live file watchers, by base folder
   const editor = {
     get document() {
       return doc;
@@ -113,6 +114,11 @@ function harness(initialText: string) {
       onDidCloseTextDocument: on('close'),
       onDidChangeTextDocument: on('change'),
       onDidChangeConfiguration: on('config'),
+      createFileSystemWatcher: (pattern: { base: { fsPath: string } }) => {
+        watched.push(pattern.base.fsPath);
+        const dispose = () => watched.splice(watched.indexOf(pattern.base.fsPath), 1);
+        return { onDidCreate() {}, onDidChange() {}, onDidDelete() {}, dispose };
+      },
       applyEdit: async (edit: WorkspaceEdit) => {
         let next = text;
         const sorted = [...edit.edits].sort((a, b) => b.range.args[0].offset - a.range.args[0].offset);
@@ -159,6 +165,14 @@ function harness(initialText: string) {
       }
     },
     Range,
+    RelativePattern: class {
+      base: unknown;
+      pattern: string;
+      constructor(base: unknown, pattern: string) {
+        this.base = base;
+        this.pattern = pattern;
+      }
+    },
     WorkspaceEdit,
     EventEmitter,
   };
@@ -173,6 +187,7 @@ function harness(initialText: string) {
     doc,
     text: () => text,
     decorations,
+    watched,
     editor,
     send: (m: unknown) => onMessage(m),
     setText,
@@ -208,6 +223,8 @@ test('extension compiles with the official D2 build, applies text edits and sync
     assert.deepEqual(Object.keys(first.model.nodes).sort(), ['api', 'db']);
     assert.equal(first.model.nodes.db.shape, 'cylinder');
     assert.equal(first.model.edges[0].id, '(api -> db)[0]');
+    assert.deepEqual(first.adrs, { components: {}, unmatched: [], roots: [] }, 'no adr-folders variable');
+    assert.deepEqual(h.watched, []);
 
     h.listeners.selection({ textEditor: { document: h.doc }, selections: [{ active: { line: 1 } }] });
     assert.deepEqual(h.posted.at(-1), { type: 'cursor', id: 'db' });
@@ -242,6 +259,15 @@ test('extension compiles with the official D2 build, applies text edits and sync
     await h.send({ type: 'edit', edit: { op: 'addNode', parent: null, label: 'Web App' } });
     assert.match(h.posted.at(-1).message, /in the D2 file/);
     assert.equal(h.text(), 'api -> db: queries\ndb.shape: cylinder\n');
+
+    // ADR folders come from `vars.adr-folders`, relative to the file; each one is watched.
+    h.setText('vars: {\n  adr-folders: [adr; ../shared/decisions]\n}\napi -> db\n');
+    const withAdrs = await until(() => h.posted.find((m) => m.type === 'update' && m.adrs?.roots.length), 'ADR roots');
+    assert.deepEqual(withAdrs.adrs.roots, ['adr', '../shared/decisions']);
+    assert.deepEqual(h.watched, ['/tmp/archer/adr', '/tmp/shared/decisions']);
+    h.setText('vars: {\n  adr-folders: docs/adr\n}\napi -> db\n');
+    await until(() => h.posted.find((m) => m.type === 'update' && m.adrs?.roots[0] === 'docs/adr'), 'changed ADR roots');
+    assert.deepEqual(h.watched, ['/tmp/archer/docs/adr'], 'old watchers are dropped');
 
     // Compile errors become diagnostics; the preview keeps the last good model.
     h.setText('api -> db\nweb: {\n');

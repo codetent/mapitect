@@ -2,6 +2,7 @@ import type { CompileResponse, Connection, Shape } from '@d2lang/d2';
 import type { DiagramEdge, DiagramModel, DiagramNode, Direction, SourceRange, TableField } from '../model.ts';
 import { boxText, segKey, splitId, type Span } from './ast.ts';
 import { indexSource, type SourceIndex, type Stmt } from './source.ts';
+import { adrFoldersOf } from '../adr.ts';
 
 export interface Built {
   model: DiagramModel;
@@ -10,6 +11,8 @@ export interface Built {
   edgeSites: Map<string, { stmt: Stmt; i: number }>;
   // segKey -> canonical node id
   ids: Map<string, string>;
+  // ADR roots from `vars.adr-folders`, as written
+  adrFolders: string[];
 }
 
 // D2 theme colour codes (N1…N7, B1…B6, AA2…) mean "not set by the user".
@@ -115,6 +118,7 @@ export function buildModel(res: CompileResponse, text: string): Built {
     index,
     edgeSites,
     ids,
+    adrFolders: adrFoldersOf(res.graph.ast),
   };
 }
 

@@ -2,7 +2,8 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange } from '../src/model.ts';
+import type { AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange } from '../src/model.ts';
+import { adrNumber, DecisionReader, statusPill } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
 import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer, type EdgeStyle } from './render.ts';
@@ -41,6 +42,7 @@ type HostMessage =
       model: DiagramModel;
       fileName: string;
       config?: { defaultDepth?: number; wheel?: string };
+      adrs?: AdrIndex; // decisions per element, from the ADR folders
     }
   | { type: 'toast'; message: string }
   | { type: 'cursor'; id: string | null }
@@ -97,6 +99,7 @@ app.innerHTML = `
     </div>
     <div class="toast"></div>
     <button class="error-banner glass"></button>
+    <aside class="adr-reader glass"></aside>
     <div class="empty-state">
       <div class="empty-icon">${iconSvg('layers', 28)}</div>
       <div class="empty-title">Nothing to show yet</div>
@@ -135,6 +138,7 @@ const view = {
 };
 
 let model: DiagramModel | null = null;
+let adrIndex: AdrIndex | null = null;
 let graph: VisibleGraph | null = null;
 let scene: Scene | null = null;
 let firstRender = true;
@@ -156,6 +160,7 @@ const renderer = new Renderer(world, {
     applyHighlight();
   },
   contextMenu: (id, ev) => openContextMenu(id, ev),
+  decisions: (id) => openDecisions(id),
 });
 renderer.edgeStyle = view.edgeStyle;
 
@@ -411,6 +416,7 @@ function findVEdge(id: string): VEdge | undefined {
 
 function setSelected(id: string | null): void {
   view.selected = id;
+  if (reader.openFor && reader.openFor !== id) reader.close();
   renderDetails();
   renderTree();
   applyHighlight();
@@ -590,6 +596,13 @@ function renderTree(): void {
   foot.innerHTML = issues.length
     ? `<button class="problems" title="Go to first problem">${iconSvg('warning', 14)}<span>${issues.length} problem${issues.length === 1 ? '' : 's'}</span><span class="problem-msg">${esc(issues[0].message)}</span></button>`
     : `<span class="ok-dot"></span><span>${Object.keys(model.nodes).length} elements · ${model.edges.length} connections</span>`;
+  const stray = adrIndex?.unmatched ?? [];
+  if (stray.length) {
+    foot.insertAdjacentHTML(
+      'beforeend',
+      `<span class="adr-unmatched" title="ADR folders that match no element: ${esc(stray.join(', '))}">${iconSvg('decision', 13)}${stray.length} unmatched</span>`,
+    );
+  }
 }
 
 treeEl.addEventListener('click', (ev) => {
@@ -745,6 +758,7 @@ function renderDetails(): void {
       ${view.focus !== id ? `<button class="btn" data-action="toggle">${iconSvg(isCollapsed ? 'expand' : 'collapse', 14)}${isCollapsed ? 'Expand' : 'Collapse'}</button>` : ''}
     </div>` : ''}
     ${paused}
+    ${decisionsSection(id)}
     ${outgoing.length ? `<div class="d-section-title">Outgoing <span>${outgoing.length}</span></div><div class="conn-list">${outgoing.map((e) => connRow(e.target, e.label, 'out', e.id)).join('')}</div>` : ''}
     ${incoming.length ? `<div class="d-section-title">Incoming <span>${incoming.length}</span></div><div class="conn-list">${incoming.map((e) => connRow(e.source, e.label, 'in', e.id)).join('')}</div>` : ''}
     ${n.children.length ? `<div class="d-section-title">Contains <span>${n.children.length}</span>${internal ? `<em>${internal} internal connection${internal === 1 ? '' : 's'}</em>` : ''}</div>
@@ -757,6 +771,7 @@ detailsEl.addEventListener('click', (ev) => {
   if (!el || !view.selected) return;
   const sel = view.selected;
   if (el.dataset.reveal) return reveal(el.dataset.reveal);
+  if (el.dataset.adr !== undefined) return reader.open(sel, Number(el.dataset.adr));
   if (el.dataset.gotoEdge) return goToSource(`edge:${el.dataset.gotoEdge}`);
   if (el.dataset.open) return vscode.postMessage({ type: 'openLink', url: el.dataset.open });
   if (el.dataset.shape !== undefined) {
@@ -970,6 +985,13 @@ async function doExport(format: 'svg' | 'png'): Promise<void> {
 
 document.addEventListener('keydown', (ev) => {
   if (ev.target instanceof Element && ev.target.closest('input, textarea')) return;
+  if (reader.openFor) {
+    if (ev.key === 'Escape') return reader.close();
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+      ev.preventDefault();
+      return reader.step(ev.key === 'ArrowLeft' ? -1 : 1);
+    }
+  }
   const mod = ev.metaKey || ev.ctrlKey;
   if ((mod && ev.key === 'f') || ev.key === '/') {
     ev.preventDefault();
@@ -1063,6 +1085,52 @@ function arrowKey(key: string, fast: boolean): void {
     setSelected(best.id);
     ensureVisible(scene.byId.get(best.id)!);
   }
+}
+
+// ---------------------------------------------------------------- decisions
+
+const reader = new DecisionReader($('.adr-reader'), {
+  openFile: (path) => vscode.postMessage({ type: 'openFile', path }),
+  openLink: (url) => vscode.postMessage({ type: 'openLink', url }),
+  decisionsOf: (component) => adrIndex?.components[component] ?? [],
+  nameOf: (component) => nameOf(component),
+  find: (file) => {
+    for (const [component, list] of Object.entries(adrIndex?.components ?? {})) {
+      const index = list.findIndex((a) => a.file === file);
+      if (index >= 0) return { component, index };
+    }
+    return undefined;
+  },
+});
+
+function openDecisions(id: string): void {
+  if (!adrIndex?.components[id]?.length) return;
+  if (view.selected !== id) setSelected(id);
+  reader.open(id, 0);
+}
+
+function decisionsSection(id: string): string {
+  const list = adrIndex?.components[id] ?? [];
+  if (!list.length) {
+    const root = adrIndex?.roots[0];
+    const key = esc(model!.nodes[id].key);
+    return `<div class="d-section-title">Decisions</div>
+      <p class="d-note">${
+        root
+          ? `No decisions recorded. Add MADR files to <code>${esc(root)}/${key}/</code>.`
+          : `No ADR folders set. Add <code>adr-folders: [adr]</code> to the file's <code>vars</code> and MADR files to <code>adr/${key}/</code>.`
+      }</p>`;
+  }
+  return `<div class="d-section-title">Decisions <span>${list.length}</span></div>
+    <div class="adr-list">${list
+      .map(
+        (a, i) => `<button class="adr-row" data-adr="${i}" title="${esc(a.name)}">
+          <span class="adr-num">${esc(adrNumber(a))}</span>
+          <span class="adr-title">${esc(a.title)}</span>
+          ${statusPill(a)}
+        </button>`,
+      )
+      .join('')}</div>`;
 }
 
 // ------------------------------------------------------------------ editing
@@ -1160,6 +1228,9 @@ function openContextMenu(id: string | null, ev: MouseEvent): void {
               : []),
           ]
         : []),
+      ...(adrIndex?.components[id]?.length
+        ? [{ label: `Decisions (${adrIndex.components[id].length})`, icon: 'decision' as IconName, run: () => openDecisions(id) }]
+        : []),
       { label: 'Go to source', icon: 'source', hint: '⌘-click', run: () => goToSource(id) },
     ];
   }
@@ -1219,6 +1290,9 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       const turned = !!model && model.direction !== msg.model.direction;
       model = msg.model;
       docUri = msg.uri;
+      adrIndex = msg.adrs ?? null;
+      renderer.adrCounts = new Map(Object.entries(adrIndex?.components ?? {}).map(([id, list]) => [id, list.length]));
+      reader.refresh();
       renderBanner();
       $('.file-name').textContent = msg.fileName;
       if (msg.config?.wheel) view.wheel = msg.config.wheel;

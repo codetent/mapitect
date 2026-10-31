@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { D2 } from '@d2lang/d2';
 import type { DiagramModel, EditOp, ParseIssue, SourceRange } from './model.ts';
+import { assignAdrs, scanAdrFolders, type AdrFolder } from './adr.ts';
 import { D2Compiler } from './d2/compiler.ts';
 import type { Built } from './d2/convert.ts';
 import { EditError, planEdit } from './d2/edits.ts';
@@ -238,6 +239,7 @@ type WebviewMessage =
   | { type: 'openLink'; url: string }
   | { type: 'export'; format: 'svg' | 'png'; data: string }
   | { type: 'edit'; edit: EditOp }
+  | { type: 'openFile'; path: string }
   | { type: 'undo' }
   | { type: 'redo' };
 
@@ -258,6 +260,12 @@ class Preview {
   // Visual edits as whole-text snapshots; only replayed while the text still matches.
   private readonly history: { before: string; after: string }[] = [];
   private readonly future: { before: string; after: string }[] = [];
+  // ADR folders under the roots named in `vars.adr-folders`, reloaded when those
+  // roots change or Markdown files in them do.
+  private adrRoots: string[] = [];
+  private adrFolders: AdrFolder[] = [];
+  private adrWatchers: vscode.Disposable[] = [];
+  private adrReload: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -269,7 +277,11 @@ class Preview {
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.svg');
     panel.webview.html = this.html();
     panel.webview.onDidReceiveMessage((msg: WebviewMessage) => this.onMessage(msg));
-    panel.onDidDispose(() => this.selection.dispose());
+    panel.onDidDispose(() => {
+      this.selection.dispose();
+      for (const w of this.adrWatchers) w.dispose();
+      clearTimeout(this.adrReload);
+    });
   }
 
   private editors(): vscode.TextEditor[] {
@@ -295,6 +307,8 @@ class Preview {
   }
 
   update(state: DocState): void {
+    const roots = state.built?.adrFolders ?? [];
+    if (!sameList(roots, this.adrRoots)) return void this.loadAdrs(roots); // updates again once scanned
     const config = vscode.workspace.getConfiguration('archer');
     const model = state.built ? this.resolveIcons(state.built.model) : EMPTY;
     this.post({
@@ -302,6 +316,7 @@ class Preview {
       uri: this.document.uri.toString(),
       fileName: path.basename(this.document.fileName),
       model: { ...model, issues: state.issues, valid: state.ok },
+      adrs: assignAdrs(this.adrFolders, model, this.adrRoots),
       config: { defaultDepth: config.get<number>('defaultDepth', 1), wheel: config.get<string>('wheel', 'auto') },
     });
   }
@@ -311,6 +326,43 @@ class Preview {
     if (id === this.lastCursor) return;
     this.lastCursor = id;
     this.post({ type: 'cursor', id });
+  }
+
+  private async loadAdrs(roots = this.adrRoots): Promise<void> {
+    const base = path.dirname(this.document.uri.fsPath);
+    if (roots !== this.adrRoots) {
+      this.adrRoots = roots;
+      this.watchAdrs(roots.map((r) => path.resolve(base, r)));
+    }
+    const folders = await scanAdrFolders(base, roots);
+    if (roots !== this.adrRoots) return; // the variable changed while scanning
+    this.adrFolders = folders;
+    const state = this.models.get(this.document);
+    if (state) this.update(state);
+  }
+
+  private watchAdrs(dirs: string[]): void {
+    for (const w of this.adrWatchers) w.dispose();
+    const reload = () => {
+      clearTimeout(this.adrReload);
+      this.adrReload = setTimeout(() => void this.loadAdrs(), 250);
+    };
+    this.adrWatchers = dirs.map((dir) => {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(dir), '**/*.md'));
+      watcher.onDidCreate(reload);
+      watcher.onDidChange(reload);
+      watcher.onDidDelete(reload);
+      return watcher;
+    });
+  }
+
+  // Links inside ADRs may point anywhere; only open files next to the diagram, in the workspace, or known ADRs.
+  private mayOpen(file: string): boolean {
+    const target = path.resolve(file);
+    const within = (dir: string) => !path.relative(dir, target).startsWith('..') && !path.isAbsolute(path.relative(dir, target));
+    if (within(path.dirname(this.document.uri.fsPath))) return true;
+    if ((vscode.workspace.workspaceFolders ?? []).some((f) => within(f.uri.fsPath))) return true;
+    return this.adrFolders.some((f) => f.adrs.some((a) => path.resolve(a.file) === target));
   }
 
   private toast(message: string): void {
@@ -338,6 +390,11 @@ class Preview {
           selection: new vscode.Selection(range.start, range.start),
         });
         shown.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+        return;
+      }
+      case 'openFile': {
+        if (!this.mayOpen(msg.path)) return;
+        void vscode.window.showTextDocument(vscode.Uri.file(msg.path), { viewColumn: vscode.ViewColumn.Beside, preview: true });
         return;
       }
       case 'openLink': {
@@ -452,4 +509,8 @@ class Preview {
 </body>
 </html>`;
   }
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
