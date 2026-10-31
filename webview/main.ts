@@ -808,6 +808,8 @@ detailsEl.addEventListener('click', (ev) => {
       return drillInto(sel);
     case 'toggle':
       return toggleCollapse(sel);
+    case 'new-decision':
+      return newDecision(sel);
   }
 });
 
@@ -1133,19 +1135,27 @@ function openDecisions(id: string): void {
   reader.open(id, 0);
 }
 
+// The host asks for a title, then creates the MADR file and opens it.
+function newDecision(id: string): void {
+  if (!adrIndex?.roots.length) return toast("Add adr-folders to the file's vars to record decisions");
+  vscode.postMessage({ type: 'newDecision', id });
+}
+
 function decisionsSection(id: string): string {
   const list = adrIndex?.components[id] ?? [];
+  const add = adrIndex?.roots.length
+    ? `<button class="icon-btn d-add" data-action="new-decision" title="New decision">${iconSvg('plus', 14)}</button>`
+    : '';
   if (!list.length) {
-    const root = adrIndex?.roots[0];
     const key = esc(model!.nodes[id].key);
-    return `<div class="d-section-title">Decisions</div>
+    return `<div class="d-section-title">Decisions${add}</div>
       <p class="d-note">${
-        root
-          ? `No decisions recorded. Add MADR files to <code>${esc(root)}/${key}/</code>.`
+        add
+          ? 'No decisions recorded yet.'
           : `No ADR folders set. Add <code>adr-folders: [adr]</code> to the file's <code>vars</code> and MADR files to <code>adr/${key}/</code>.`
       }</p>`;
   }
-  return `<div class="d-section-title">Decisions <span>${list.length}</span></div>
+  return `<div class="d-section-title">Decisions <span>${list.length}</span>${add}</div>
     <div class="adr-list">${list
       .map(
         (a, i) => `<button class="adr-row" data-adr="${i}" title="${esc(a.name)}">
@@ -1255,6 +1265,7 @@ function openContextMenu(id: string | null, ev: MouseEvent): void {
       ...(adrIndex?.components[id]?.length
         ? [{ label: `Decisions (${adrIndex.components[id].length})`, icon: 'decision' as IconName, run: () => openDecisions(id) }]
         : []),
+      { label: 'New decision…', icon: 'plus', run: () => newDecision(id) },
       { label: 'Go to source', icon: 'source', hint: '⌘-click', run: () => goToSource(id) },
     ];
   }

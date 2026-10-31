@@ -18,6 +18,8 @@ w.acquireVsCodeApi = () => ({
     if (msg.type === 'ready') void call('model');
     else if (msg.type === 'edit') void call('edit', { edit: msg.edit });
     else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'reload') void call(msg.type);
+    // Creating files needs VS Code; the server never writes to disk.
+    else if (msg.type === 'newDecision') window.postMessage({ type: 'toast', message: 'New decisions are created in VS Code' }, '*');
   },
   getState: () => undefined,
   setState: () => undefined,

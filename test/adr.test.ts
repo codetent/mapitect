@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { assignAdrs, parseMadr, scanAdrFolders } from '../src/adr.ts';
+import { assignAdrs, parseMadr, planNewAdr, scanAdrFolders } from '../src/adr.ts';
 import { D2Compiler } from '../src/d2/compiler.ts';
 import type { DiagramModel, DiagramNode } from '../src/model.ts';
 
@@ -118,6 +118,41 @@ test('scans several roots, skipping READMEs, templates and hidden files', async 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('plans a new decision in a folder that matches the element', () => {
+  const m = model({ shop: 'Shop', 'shop.api': 'API', 'shop.db': 'DB', 'ops.db': 'Ops DB' });
+  const plan = (id: string, title = 'Use Postgres for orders') =>
+    planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id, existing: [], title, date: '2026-10-31' });
+  const matched = (file: string) => {
+    const dir = path.relative('/p/adr', path.dirname(file)).split(path.sep).join('/');
+    return Object.keys(assignAdrs([{ dir, adrs: [parseMadr('# x\n', file)] }], m, ['adr']).components);
+  };
+
+  const api = plan('shop.api');
+  assert.equal(api.file, path.join('/p/adr', 'api', '0001-use-postgres-for-orders.md'), 'unique key');
+  assert.deepEqual(matched(api.file), ['shop.api']);
+
+  const db = plan('shop.db', 'Café über alles!');
+  assert.equal(db.file, path.join('/p/adr', 'shop.db', '0001-cafe-uber-alles.md'), 'full id when the key is shared');
+  assert.deepEqual(matched(db.file), ['shop.db']);
+
+  const adr = parseMadr(api.text, api.file);
+  assert.equal(adr.title, 'Use Postgres for orders');
+  assert.equal(adr.status, 'proposed');
+  assert.equal(adr.date, '2026-10-31');
+  assert.equal(adr.number, '0001');
+  assert.match(api.text.split('\n')[api.cursor], /^\{Describe/);
+});
+
+test('a new decision goes next to existing ones, numbered after all of them', () => {
+  const m = model({ gateway: 'Gateway' });
+  const existing = [parseMadr('# a\n', '/p/shared/gateway/0007-a.md'), parseMadr('# b\n', '/p/adr/gw/0002-b.md')];
+  const plan = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing, title: 'C', date: '2026-10-31' });
+  assert.equal(plan.file, path.join('/p/adr', 'gw', '0008-c.md'), 'first root wins, highest number + 1');
+  const only = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing: existing.slice(0, 1), title: 'C', date: '2026-10-31' });
+  assert.equal(only.file, path.join('/p/shared', 'gateway', '0008-c.md'));
+  assert.throws(() => planNewAdr({ baseDir: '/p', roots: [], model: m, id: 'gateway', existing: [], title: 'C', date: '2026-10-31' }), /adr-folders/);
 });
 
 const { D2 } = createRequire(import.meta.url)('@d2lang/d2');

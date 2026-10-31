@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import type { D2 } from '@d2lang/d2';
 import type { DiagramModel, EditOp, ParseIssue, SourceRange } from './model.ts';
-import { assignAdrs, scanAdrFolders, type AdrFolder } from './adr.ts';
+import { assignAdrs, planNewAdr, scanAdrFolders, type AdrFolder } from './adr.ts';
 import { D2Compiler } from './d2/compiler.ts';
 import type { Built } from './d2/convert.ts';
 import { EditError, planEdit } from './d2/edits.ts';
@@ -241,6 +241,7 @@ type WebviewMessage =
   | { type: 'export'; format: 'svg' | 'png'; data: string }
   | { type: 'edit'; edit: EditOp }
   | { type: 'openFile'; path: string }
+  | { type: 'newDecision'; id: string }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'reload' };
@@ -393,6 +394,8 @@ class Preview {
         return this.travel(msg.type);
       case 'reload':
         return this.reload();
+      case 'newDecision':
+        return this.newDecision(msg.id);
       case 'navigate': {
         const range = toRange(msg.range);
         const editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === this.document.uri.toString());
@@ -430,6 +433,43 @@ class Preview {
         return;
       }
     }
+  }
+
+  // Asks for a title, writes the element's next MADR file and opens it next to the diagram.
+  private async newDecision(id: string): Promise<void> {
+    const model = this.models.get(this.document)?.built?.model;
+    const node = model?.nodes[id];
+    if (!model || !node) return;
+    if (!this.adrRoots.length) return this.toast("Add adr-folders to the file's vars to record decisions");
+    const title = (
+      await vscode.window.showInputBox({
+        title: `New decision for ${node.label.split('\n')[0]}`,
+        prompt: 'What was decided?',
+        placeHolder: 'Use Stripe for card payments',
+        validateInput: (v) => (v.trim() ? undefined : 'Enter a title'),
+      })
+    )?.trim();
+    if (!title) return;
+    const plan = planNewAdr({
+      baseDir: path.dirname(this.document.uri.fsPath),
+      roots: this.adrRoots,
+      model,
+      id,
+      existing: assignAdrs(this.adrFolders, model, this.adrRoots).components[id] ?? [],
+      title,
+      date: today(),
+    });
+    const uri = vscode.Uri.file(plan.file);
+    if (await exists(uri)) return void vscode.window.showErrorMessage(`${path.basename(plan.file)} already exists`);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(plan.file)));
+    await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(plan.text));
+    void this.loadAdrs(); // the watchers miss files in a root that didn't exist yet
+    const line = plan.text.split('\n')[plan.cursor];
+    await vscode.window.showTextDocument(uri, {
+      viewColumn: this.editors()[0]?.viewColumn ?? vscode.ViewColumn.Beside,
+      preview: false,
+      selection: new vscode.Selection(plan.cursor, 0, plan.cursor, line.length),
+    });
   }
 
   private async applyEdit(op: EditOp): Promise<void> {
@@ -524,4 +564,19 @@ class Preview {
 
 function sameList(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+async function exists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The local date, as MADR writes it.
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

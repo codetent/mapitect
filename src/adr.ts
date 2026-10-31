@@ -208,3 +208,79 @@ function slug(text: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
+
+// ------------------------------------------------------------------ creating
+
+export interface NewAdr {
+  file: string; // absolute path of the file to create
+  text: string;
+  cursor: number; // line to put the cursor on: the context placeholder
+}
+
+// Plans the next decision for an element. It goes next to the element's existing
+// decisions (preferring the first root), numbered after the highest of them, or
+// otherwise into a new folder in the first root, named after the element's key
+// when that is unique and its full id when not.
+export function planNewAdr(opts: {
+  baseDir: string;
+  roots: string[];
+  model: DiagramModel;
+  id: string;
+  existing: Adr[];
+  title: string;
+  date: string; // YYYY-MM-DD
+}): NewAdr {
+  const { model, id, existing } = opts;
+  const roots = opts.roots.map((r) => path.resolve(opts.baseDir, r));
+  if (!roots.length) throw new Error(`Add ${ADR_VAR} to the file's vars to record decisions`);
+  const node = model.nodes[id];
+  if (!node) throw new Error(`Unknown element ${id}`);
+
+  const dirs = existing.map((a) => path.dirname(a.file));
+  const within = (root: string, dir: string) => dir === root || dir.startsWith(root + path.sep);
+  const dir =
+    roots.map((root) => dirs.find((d) => d !== root && within(root, d))).find(Boolean) ??
+    dirs[0] ??
+    path.join(roots[0], folderName(model, id));
+
+  const numbers = existing.map((a) => a.number).filter((n): n is string => !!n);
+  const next = Math.max(0, ...numbers.map(Number)) + 1;
+  const width = Math.max(4, ...numbers.map((n) => n.length));
+  const name = `${String(next).padStart(width, '0')}-${slug(opts.title) || 'decision'}.md`;
+
+  const lines = [
+    '---',
+    'status: proposed',
+    `date: ${opts.date}`,
+    'decision-makers:',
+    '---',
+    '',
+    `# ${opts.title.trim()}`,
+    '',
+    '## Context and Problem Statement',
+    '',
+    '{Describe the context and the problem this decision solves.}',
+    '',
+    '## Considered Options',
+    '',
+    '* {Option 1}',
+    '* {Option 2}',
+    '',
+    '## Decision Outcome',
+    '',
+    'Chosen option: "{Option 1}", because {justification}.',
+    '',
+    '### Consequences',
+    '',
+    '* Good, because {positive consequence}',
+    '* Bad, because {negative consequence}',
+    '',
+  ];
+  return { file: path.join(dir, name), text: lines.join('\n'), cursor: lines.indexOf('## Context and Problem Statement') + 2 };
+}
+
+function folderName(model: DiagramModel, id: string): string {
+  const key = model.nodes[id].key.toLowerCase();
+  const sameKey = Object.values(model.nodes).filter((n) => n.key.toLowerCase() === key);
+  return sameKey.length === 1 ? model.nodes[id].key : splitId(id).join('.');
+}

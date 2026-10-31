@@ -728,6 +728,14 @@ kbd {
   color: var(--muted);
 }
 
+.d-section-title .d-add {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  margin: -4px -4px -4px auto;
+  border-radius: 6px;
+}
+
 .d-section-title em {
   margin-left: auto;
   font-style: normal;

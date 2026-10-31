@@ -66,6 +66,12 @@ adr/
 - **Decision reader**: click a decision or a badge to read it, with status, date and
   decision-makers. `←` / `→` step through the component's decisions, and links between ADRs
   open in the reader.
+- **New decision**: right-click an element and choose *New decision…*, or use the `+` next to
+  *Decisions* in the details panel. Archer asks for a title, creates the next numbered MADR file
+  with `status: proposed` and today's date, and opens it in the editor. The file goes next to the
+  element's existing decisions (in the first root that has some), numbered after the highest of
+  them. An element without decisions gets a new folder in the first root, named after its key, or
+  its full id when another element shares the key.
 - **Metadata**: MADR 3/4 YAML front matter (`status`, `date`, `decision-makers`, `consulted`,
   `informed`) or MADR 2 bullets (`* Status: …`). Statuses are shown as accepted, proposed,
   rejected, deprecated or superseded.
