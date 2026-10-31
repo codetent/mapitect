@@ -72,9 +72,11 @@ export interface MenuItem {
 }
 
 let menuEl: HTMLDivElement | null = null;
+let menuClosed: (() => void) | undefined;
 
-export function showMenu(x: number, y: number, items: (MenuItem | 'sep')[]): void {
+export function showMenu(x: number, y: number, items: (MenuItem | 'sep')[], onClose?: () => void): void {
   hideMenu();
+  menuClosed = onClose;
   const el = document.createElement('div');
   el.className = 'context-menu glass';
   el.setAttribute('role', 'menu');
@@ -122,6 +124,8 @@ function escape(ev: KeyboardEvent): void {
 export function hideMenu(): void {
   menuEl?.remove();
   menuEl = null;
+  menuClosed?.();
+  menuClosed = undefined;
   window.removeEventListener('pointerdown', outside, true);
   window.removeEventListener('keydown', escape, true);
 }

@@ -1323,6 +1323,18 @@ g.btn:hover .glyph {
   stroke-width: 2.4;
 }
 
+/* The element a context menu is open for. */
+.node.menu-target .card,
+.group.menu-target > .group-bg {
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.edge.menu-target .edge-line {
+  stroke: var(--primary);
+  stroke-width: 2.4;
+}
+
 /* Moves by two dash periods per loop; edges with their own `stroke-dash` set --dash-period. */
 @keyframes flow {
   to {

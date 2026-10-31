@@ -1241,14 +1241,12 @@ function openContextMenu(id: string | null, ev: MouseEvent): void {
       { label: 'Fit to screen', icon: 'fit', hint: 'F', run: () => fitAll() },
     ];
   } else if (id.startsWith('edge:')) {
-    setSelected(id);
     const e = directEdge(id);
     items = [
       { label: 'Edit label', icon: 'pencil', hint: 'F2', disabled: ro || !e, run: () => renameElement(id) },
       { label: 'Go to source', icon: 'source', run: () => goToSource(id) },
     ];
   } else {
-    setSelected(id);
     const n = model.nodes[id];
     const v = graph?.nodes.get(id);
     items = [
@@ -1269,7 +1267,14 @@ function openContextMenu(id: string | null, ev: MouseEvent): void {
       { label: 'Go to source', icon: 'source', hint: '⌘-click', run: () => goToSource(id) },
     ];
   }
-  showMenu(ev.clientX, ev.clientY, items);
+  // Outline what the menu acts on instead of selecting it, which would open the details panel.
+  const target = !id
+    ? null
+    : id.startsWith('edge:')
+      ? world.querySelector(`g.edge[data-id="${CSS.escape(findVEdge(id.slice(5))?.id ?? '')}"]`)
+      : world.querySelector(`[data-id="${CSS.escape(id)}"]`);
+  target?.classList.add('menu-target');
+  showMenu(ev.clientX, ev.clientY, items, () => target?.classList.remove('menu-target'));
 }
 
 function renderBanner(): void {
