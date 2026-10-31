@@ -1279,9 +1279,9 @@ g.btn:hover .glyph {
   stroke-width: 2;
 }
 
+/* `style.animated` edges are dashed; like every edge, they only flow while selected. */
 .edge.animated .edge-line {
   stroke-dasharray: 8 6;
-  animation: flow 1.1s linear infinite;
 }
 
 .edge.hot .edge-line,
@@ -1315,9 +1315,10 @@ g.btn:hover .glyph {
   stroke-width: 2.4;
 }
 
+/* Moves by two dash periods per loop; edges with their own `stroke-dash` set --dash-period. */
 @keyframes flow {
   to {
-    stroke-dashoffset: -28;
+    stroke-dashoffset: calc(var(--dash-period, 14px) * -2);
   }
 }
 

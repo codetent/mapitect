@@ -185,10 +185,13 @@ export class Renderer {
         const line = g.select('path.edge-line');
         const stroke = d.v.style.stroke && isColor(d.v.style.stroke) ? d.v.style.stroke : null;
         const dash = d.v.style['stroke-dash'];
+        const seg = dash && dash !== '0' ? +dash * 1.5 + 2 : null;
         line
           .style('stroke', nullable(stroke))
           .style('stroke-width', nullable(d.v.style['stroke-width'] ? `${d.v.style['stroke-width']}px` : null))
-          .style('stroke-dasharray', nullable(dash && dash !== '0' ? `${+dash * 1.5 + 2} ${+dash * 1.5 + 2}` : null))
+          .style('stroke-dasharray', nullable(seg ? `${seg} ${seg}` : null))
+          // One dash + gap, so the flow animation loops without a jump.
+          .style('--dash-period', nullable(seg ? `${seg * 2}px` : null))
           .style('opacity', d.v.style.opacity ?? null);
         g.selectAll('path.edge-arrow').style('fill', nullable(stroke)).style('stroke', nullable(stroke));
 
