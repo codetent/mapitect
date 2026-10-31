@@ -1,39 +1,27 @@
 ---
 status: accepted
-date: 2025-02-18
+date: 2025-03-11
 decision-makers: Platform team
 ---
 
-# One API gateway for authentication, rate limiting and routing
+# One API gateway in front of all services
 
 ## Context and Problem Statement
 
-The storefront and the back-office UI both call the domain services. Each service would otherwise
-implement authentication and rate limiting itself.
-
-## Decision Drivers
-
-* Cross-cutting concerns should be implemented once.
-* Internal service addresses should not leak to clients.
+The storefront and the back office both need the catalog and order services. Do they call the
+services directly?
 
 ## Considered Options
 
-* One API gateway in front of all domain services
-* Authentication and rate limiting in every service
-* A service mesh with per-service policies
+* One API gateway for all clients
+* Clients call each service directly
 
 ## Decision Outcome
 
-Chosen option: "One API gateway in front of all domain services".
+Chosen option: "One API gateway", so authentication, rate limiting and routing happen in one place
+and the services stay internal.
 
 ### Consequences
 
-* Good, because policies are configured in one place.
-* Bad, because the gateway is on every request path and must be highly available.
-
-## Pros and Cons of the Options
-
-### A service mesh with per-service policies
-
-* Good, because it also secures service-to-service traffic.
-* Bad, because it is a lot of infrastructure for a team our size.
+* Good, because services are not exposed to the internet.
+* Bad, because every new client need is a gateway route first.

@@ -2,7 +2,7 @@
 // visual edits, undo) against in-memory copies of the files in examples/.
 // Run with `node dev/server.mts [port]`.
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { D2Compiler } from '../src/d2/compiler.ts';
@@ -32,8 +32,15 @@ async function load(file: string): Promise<Doc> {
   return doc;
 }
 
+// The other .d2 files in examples/, so `...@imports` resolve.
+async function siblings(file: string): Promise<Record<string, string>> {
+  const dir = path.join(root, 'examples');
+  const names = (await readdir(dir)).filter((n) => n.endsWith('.d2') && n !== path.basename(file));
+  return Object.fromEntries(await Promise.all(names.map(async (n) => [n, await readFile(path.join(dir, n), 'utf8')])));
+}
+
 async function snapshot(file: string, doc: Doc) {
-  const r = await compiler.compile(doc.text, file);
+  const r = await compiler.compile(doc.text, file, await siblings(file));
   if (r.ok) doc.built = r.built;
   const model = doc.built?.model ?? { direction: 'down', nodes: {}, roots: [], edges: [], lineIndex: {}, issues: [] };
   // ADRs are read fresh from the folders in `vars.adr-folders` on every snapshot.
@@ -52,7 +59,7 @@ async function api(route: string, body: Record<string, unknown>) {
       if (typeof body.text === 'string') doc.text = body.text;
       return body.text === undefined ? { text: doc.text } : snapshot(file, doc);
     case 'edit': {
-      const r = await compiler.compile(doc.text, file);
+      const r = await compiler.compile(doc.text, file, await siblings(file));
       if (!r.ok) return { type: 'toast', message: 'Fix the errors in the D2 file before editing in the diagram' };
       try {
         const edits = planEdit(doc.text, r.built, body.edit as EditOp);

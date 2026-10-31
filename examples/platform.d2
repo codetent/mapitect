@@ -1,93 +1,132 @@
-# Archer example — an e-commerce platform, IcePanel style.
+# Archer example: a small online bookshop that uses everything the preview supports.
 # Open the preview with Cmd+K V (Ctrl+K V on Windows/Linux).
+
+# Classes live in styles.d2 next to this file.
+...@styles
 
 direction: right
 
 vars: {
-  stack: Kubernetes
+  cloud: AWS
   # Folders with architecture decision records, one subfolder per component.
-  adr-folders: [adr]
+  adr-folders: [adr; adr-shared]
 }
 
-classes: {
-  external: {
-    style.fill: "#64748b"
-  }
-  async: {
-    style.stroke-dash: 4
-    style.animated: true
-  }
-}
-
-customer: Customer {
+customer: Reader {
   shape: person
-  tooltip: Browses the catalog, places orders and tracks deliveries.
+  tooltip: Browses books, buys them and gets e-mail receipts.
 }
 
-admin: Back-office staff {
+staff: Shop staff {
   shape: person
-  tooltip: Manages catalog, pricing and refunds.
+  tooltip: Curates the catalog and reads the sales reports.
 }
 
-shop: Online Shop {
-  tooltip: Everything we build and run on ${stack}.
+shop: Bookshop {
+  tooltip: Everything we build and run on ${cloud}.
+
+  cdn: CloudFront {
+    shape: cloud
+    icon: https://icons.terrastruct.com/aws%2FNetworking%20&%20Content%20Delivery%2FAmazon-CloudFront.svg
+  }
 
   web: Storefront {
-    tooltip: Next.js app serving the public shop.
-    link: https://nextjs.org
+    icon: https://icons.terrastruct.com/dev%2Freact.svg
+    tooltip: React app serving the public shop.
+    link: https://react.dev
+    style.underline: true
   }
-  backoffice: Back-office UI {
-    tooltip: Internal React admin panel.
+
+  admin: Back office {
+    tooltip: Internal admin panel for staff.
   }
 
   gateway: API Gateway {
     shape: hexagon
     tooltip: Auth, rate limiting and routing.
+    style.3d: true
   }
 
-  services: Domain services {
+  backend: Backend {
     catalog: Catalog Service {
-      tooltip: Products, categories and search indexing.
+      tooltip: Books, authors and search.
+      style.multiple: true
     }
-    orders: Order Service {
-      tooltip: Checkout orchestration and order lifecycle.
-    }
-    payments: Payment Service
-    notify: Notification Service
 
-    orders -> payments: charge
-    orders -> notify: order events {class: async}
+    recommendations: Recommendations {
+      class: planned
+      tooltip: "Planned: \"readers also bought\" suggestions."
+    }
+
+    orders: Order Service {
+      api: Order API {
+        tooltip: Checkout and order history.
+      }
+      jobs: Fulfilment jobs {
+        shape: queue
+      }
+      worker: Fulfilment worker {
+        tooltip: Reserves stock and hands orders to the warehouse.
+      }
+
+      api -> jobs: enqueue
+      jobs -> worker: consume
+    }
+
+    payments: Payment Service {
+      tooltip: Takes card payments through Stripe.
+      style.stroke: "#e11d48"
+      style.stroke-width: 3
+    }
+
+    export: Sales report job {
+      tooltip: Builds yesterday's sales report every night.
+    }
+
+    orders.api -> payments: charge {
+      style.stroke: "#e11d48"
+    }
   }
 
   data: Data {
-    catalogdb: Catalog DB {
+    db: PostgreSQL {
+      shape: cylinder
+      icon: https://icons.terrastruct.com/dev%2Fpostgresql.svg
+      tooltip: Books and orders.
+    }
+
+    replica: Read replica {
       shape: cylinder
     }
-    ordersdb: orders {
-      shape: sql_table
-      id: uuid {constraint: primary_key}
-      customer_id: uuid {constraint: foreign_key}
-      total: decimal
-      status: varchar
-    }
-    bus: Event Bus {
+
+    bus: Order events {
       shape: queue
-      tooltip: Kafka topics for domain events.
+      tooltip: SQS queue for domain events.
     }
-    cache: Redis {
-      shape: cylinder
+
+    db -- replica: replication {
+      style.opacity: 0.5
     }
   }
 
+  cdn -> web: cached pages
   web -> gateway: HTTPS
-  backoffice -> gateway: HTTPS
-  gateway -> services.catalog: REST
-  gateway -> services.orders: REST
-  services.catalog -> data.catalogdb: reads / writes
-  services.catalog -> data.cache: cache
-  services.orders -> data.ordersdb: SQL
-  services.orders -> data.bus: publishes {class: async}
-  data.bus -> services.notify: consumes {class: async}
+  admin -> gateway: HTTPS
+  gateway -> backend.catalog: REST
+  gateway -> backend.orders.api: REST {
+    style.stroke-width: 3
+  }
+  backend.catalog -> data.db: reads
+  backend.recommendations -> data.replica: reads
+  backend.orders.api -> data.db: writes {
+    target-arrowhead: {
+      shape: circle
+      style.filled: true
+    }
+  }
+  backend.orders.worker -> data.bus: OrderPlaced {class: async}
+  data.bus -> backend.catalog: update stock {class: async}
+  backend.export <- data.replica: rows
 }
 
 stripe: Stripe {
@@ -96,13 +135,16 @@ stripe: Stripe {
   link: https://stripe.com
 }
 
-sendgrid: SendGrid {
+postmark: Postmark {
   shape: cloud
   class: external
 }
 
-customer -> shop.web: browses
-admin -> shop.backoffice: manages
-shop.services.payments -> stripe: card payments
-shop.services.notify -> sendgrid: e-mail
-sendgrid -> customer: order updates {class: async}
+customer -> shop.cdn: browses
+staff -> shop.admin: manages
+shop.backend.payments <-> stripe: charges / webhooks
+shop.backend.orders.api -> postmark: receipt
+postmark -> customer: e-mail {class: async}
+shop.backend.export -> staff: sales report {
+  target-arrowhead.shape: arrow
+}

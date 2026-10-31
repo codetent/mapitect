@@ -73,8 +73,8 @@ adr/
   Folders that match no element are flagged in the sidebar footer.
 
 Without `adr-folders` no decisions are looked up. `README.md`, `index.md`, `template.md` and
-files starting with `.` or `_` are ignored. `examples/adr` has 18 sample decisions for the
-example diagram.
+files starting with `.` or `_` are ignored. `examples/adr` and `examples/adr-shared` hold 9
+sample decisions for the example diagram.
 
 ## Supported D2
 
