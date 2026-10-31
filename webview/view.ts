@@ -18,7 +18,6 @@ export interface VNode {
   collapsed: boolean; // a container drawn as a card
   context: boolean; // outside the drill-down focus
   frame: boolean; // the drill-down focus itself
-  outer: boolean; // outermost element of the current view; the only ones drawn when zoomed far out
   depth: number;
   descendants: number;
   children: VNode[];
@@ -106,7 +105,6 @@ export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
       collapsed,
       context,
       frame,
-      outer: context || (focus ? node.parent === focus : node.parent === null),
       depth,
       descendants: hasChildren ? descendantCount(model, id) : 0,
       children: [],

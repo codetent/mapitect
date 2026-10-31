@@ -234,8 +234,6 @@ function viewportSize(): { w: number; h: number } {
 function onCameraChange(t: ZoomTransform): void {
   zoomLabel.textContent = `${Math.round(t.k * 100)}%`;
   world.classList.toggle('far', t.k < 0.45);
-  world.classList.toggle('very-far', t.k < 0.22);
-  world.style.setProperty('--inv-k', String(1 / t.k)); // keeps far-out labels at a fixed screen size
   let step = 24;
   while (step * t.k < 14) step *= 2;
   const size = step * t.k;
@@ -491,7 +489,7 @@ function applyHighlight(): void {
 
   world.classList.toggle('has-selection', hasSel);
   select(world)
-    .selectAll<SVGGElement, unknown>('g.node, g.group, g.cover')
+    .selectAll<SVGGElement, unknown>('g.node, g.group')
     .each(function () {
       const id = this.getAttribute('data-id')!;
       const isGroup = this.classList.contains('group');
@@ -965,7 +963,7 @@ async function doExport(format: 'svg' | 'png'): Promise<void> {
   view.hover = null;
   // Snap highlight transitions so computed styles reflect the neutral state.
   world.classList.add('exporting');
-  world.classList.remove('far', 'very-far'); // exports are always the detailed view
+  world.classList.remove('far'); // exports are always the detailed view
   applyHighlight();
   void world.getBoundingClientRect();
   try {

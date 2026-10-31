@@ -39,7 +39,6 @@ export class Renderer {
   private readonly root: Sel;
   private readonly groupLayer: Sel;
   private readonly edgeLayer: Sel;
-  private readonly coverLayer: Sel;
   private readonly nodeLayer: Sel;
   private readonly labelLayer: Sel;
   private readonly annotationLayer: Sel;
@@ -51,8 +50,6 @@ export class Renderer {
     this.root = select(world);
     this.groupLayer = this.root.append('g').attr('class', 'layer-groups');
     this.edgeLayer = this.root.append('g').attr('class', 'layer-edges');
-    // Far out, outer groups become solid blocks drawn over the edges, so connections end at their border.
-    this.coverLayer = this.root.append('g').attr('class', 'layer-covers');
     this.nodeLayer = this.root.append('g').attr('class', 'layer-nodes');
     this.labelLayer = this.root.append('g').attr('class', 'layer-labels');
     this.annotationLayer = this.root.append('g').attr('class', 'layer-annotations');
@@ -97,7 +94,6 @@ export class Renderer {
     groupsAll
       .classed('frame', (d) => d.v.frame)
       .classed('context', (d) => d.v.context)
-      .classed('outer', (d) => d.v.outer)
       .transition(t as never)
       .style('opacity', 1)
       .attr('transform', (d) => `translate(${d.x},${d.y})`);
@@ -110,28 +106,6 @@ export class Renderer {
       .select('g.btn-drill')
       .transition(t as never)
       .attr('transform', (d) => `translate(${d.w - (d.v.frame ? 46 : 82)},16)`);
-
-    // ------------------------------------------------------------ covers
-    const covers = this.coverLayer
-      .selectAll<SVGGElement, SNode>('g.cover')
-      .data(scene.nodes.filter((n) => n.v.kind === 'group' && n.v.outer), (d) => d.v.id);
-    covers.exit().remove();
-    const coversEnter = covers
-      .enter()
-      .append('g')
-      .attr('class', 'cover')
-      .attr('data-id', (d) => d.v.id)
-      .attr('transform', (d) => `translate(${d.x},${d.y})`)
-      .each(function () {
-        const g = select(this);
-        g.append('rect').attr('rx', 18);
-        g.append('text').attr('class', 'far-label');
-      });
-    const coversAll = coversEnter.merge(covers);
-    coversAll.style('--accent', (d) => d.v.type.accent).select('text').text((d) => d.v.node.label.replace(/\n/g, ' '));
-    coversAll.transition(t as never).attr('transform', (d) => `translate(${d.x},${d.y})`);
-    coversAll.select('rect').transition(t as never).attr('width', (d) => d.w).attr('height', (d) => d.h);
-    coversAll.select('text').transition(t as never).attr('x', (d) => d.w / 2).attr('y', (d) => d.h / 2);
 
     // ------------------------------------------------------------- nodes
     const nodes = this.nodeLayer
@@ -158,12 +132,11 @@ export class Renderer {
       .attr('class', (d) => `node kind-${d.v.kind}`)
       .classed('context', (d) => d.v.context)
       .classed('collapsed', (d) => d.v.collapsed)
-      .classed('outer', (d) => d.v.outer)
       .transition(t as never)
       .style('opacity', 1)
       .attr('transform', (d) => `translate(${d.x},${d.y})`);
 
-    for (const sel of [groupsAll, coversAll, nodesAll]) {
+    for (const sel of [groupsAll, nodesAll]) {
       sel
         .on('click', (ev: MouseEvent, d: SNode) => {
           ev.stopPropagation();
@@ -352,10 +325,6 @@ export class Renderer {
   private drawNode(g: Sel, d: SNode): void {
     g.selectAll('*').remove();
     const v = d.v;
-    // Readable at any zoom; only shown far out (see .very-far in the stylesheet).
-    const farLabel = () => {
-      if (v.outer) g.append('text').attr('class', 'far-label').attr('x', d.w / 2).attr('y', d.h / 2).text(v.node.label.replace(/\n/g, ' '));
-    };
     const style = v.node.style;
     g.style('--accent', v.type.accent);
     g.style('opacity', style.opacity ?? null);
@@ -375,7 +344,6 @@ export class Renderer {
         y += line.size * 0.25;
       }
       g.insert('rect', 'text').attr('class', 'hit').attr('width', d.w).attr('height', d.h);
-      farLabel();
       return;
     }
 
@@ -401,7 +369,6 @@ export class Renderer {
 
     if (v.kind === 'table') {
       this.drawTable(g, d);
-      farLabel();
       return;
     }
 
@@ -480,7 +447,6 @@ export class Renderer {
       l.append('title').text(v.node.link);
       icon(l, 'external', 13);
     }
-    farLabel();
   }
 
   private drawTable(g: Sel, d: SNode): void {
