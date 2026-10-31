@@ -17,7 +17,7 @@ w.acquireVsCodeApi = () => ({
     sent.push(msg);
     if (msg.type === 'ready') void call('model');
     else if (msg.type === 'edit') void call('edit', { edit: msg.edit });
-    else if (msg.type === 'undo' || msg.type === 'redo') void call(msg.type);
+    else if (msg.type === 'undo' || msg.type === 'redo' || msg.type === 'reload') void call(msg.type);
   },
   getState: () => undefined,
   setState: () => undefined,

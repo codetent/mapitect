@@ -226,6 +226,12 @@ test('extension compiles with the official D2 build, applies text edits and sync
     assert.deepEqual(first.adrs, { components: {}, unmatched: [], roots: [] }, 'no adr-folders variable');
     assert.deepEqual(h.watched, []);
 
+    // Reload compiles again even though the text is unchanged.
+    const updates = h.posted.filter((m) => m.type === 'update').length;
+    await h.send({ type: 'reload' });
+    assert.ok(h.posted.filter((m) => m.type === 'update').length > updates, 'reload posts a fresh model');
+    assert.deepEqual(h.posted.at(-1), { type: 'toast', message: 'Reloaded' });
+
     h.listeners.selection({ textEditor: { document: h.doc }, selections: [{ active: { line: 1 } }] });
     assert.deepEqual(h.posted.at(-1), { type: 'cursor', id: 'db' });
 

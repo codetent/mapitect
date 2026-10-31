@@ -15,6 +15,10 @@ const STATUS_LABEL: Record<AdrStatus, string> = {
   unknown: 'No status',
 };
 
+export function statusLabel(adr: Adr): string {
+  return STATUS_LABEL[adr.status];
+}
+
 export function statusPill(adr: Adr): string {
   return `<span class="adr-status s-${adr.status}">${STATUS_LABEL[adr.status]}</span>`;
 }
@@ -30,6 +34,8 @@ export interface ReaderHost {
   find(file: string): { component: string; index: number } | undefined;
   decisionsOf(component: string): Adr[];
   nameOf(component: string): string;
+  // The reader opened, closed or moved to another decision.
+  onChange(): void;
 }
 
 export class DecisionReader {
@@ -47,17 +53,25 @@ export class DecisionReader {
     return this.component;
   }
 
+  // The file shown, while open.
+  get openFile(): string | undefined {
+    return this.component ? this.el.dataset.file : undefined;
+  }
+
   open(component: string, index = 0): void {
     this.component = component;
     this.index = index;
     this.render();
     this.el.classList.add('open');
     this.el.querySelector<HTMLElement>('.r-scroll')?.scrollTo(0, 0);
+    this.host.onChange();
   }
 
   close(): void {
+    if (!this.component) return;
     this.component = null;
     this.el.classList.remove('open');
+    this.host.onChange();
   }
 
   step(delta: number): void {

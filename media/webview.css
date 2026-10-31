@@ -323,6 +323,53 @@ kbd {
   color: var(--faint);
 }
 
+/* A component's decisions, listed under it in the tree. */
+.tree-adr {
+  height: 26px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tree-adr .tree-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--faint);
+  background: none;
+}
+
+.tree-adr.selected {
+  color: var(--fg);
+}
+
+.adr-dot {
+  --c: var(--faint);
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.adr-dot.s-accepted {
+  --c: #22c55e;
+}
+
+.adr-dot.s-proposed {
+  --c: #f59e0b;
+}
+
+.adr-dot.s-rejected {
+  --c: #ef4444;
+}
+
+.adr-dot.s-deprecated {
+  --c: #94a3b8;
+}
+
+.adr-dot.s-superseded {
+  --c: #a78bfa;
+}
+
 .tree-empty {
   padding: 24px 12px;
   text-align: center;

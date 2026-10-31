@@ -65,6 +65,11 @@ async function api(route: string, body: Record<string, unknown>) {
         throw err;
       }
     }
+    case 'reload': {
+      // Drop the in-memory copy and read the file again; ADRs are rescanned by the snapshot.
+      docs.delete(file);
+      return snapshot(file, await load(file));
+    }
     case 'undo':
     case 'redo': {
       const [from, to] = route === 'undo' ? [doc.history, doc.future] : [doc.future, doc.history];

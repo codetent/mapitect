@@ -2,8 +2,8 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange } from '../src/model.ts';
-import { adrNumber, DecisionReader, statusPill } from './decisions.ts';
+import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange } from '../src/model.ts';
+import { adrNumber, DecisionReader, statusLabel, statusPill } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
 import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer, type EdgeStyle } from './render.ts';
@@ -68,6 +68,8 @@ app.innerHTML = `
       <nav class="crumbs"></nav>
     </div>
     <div class="toolbar glass">
+      <button class="icon-btn" data-action="reload" title="Reload the diagram and decisions from disk">${iconSvg('reload', 16)}</button>
+      <span class="sep"></span>
       <button class="icon-btn" data-action="undo" title="Undo (⌘Z)">${iconSvg('undo', 16)}</button>
       <button class="icon-btn" data-action="redo" title="Redo (⇧⌘Z)">${iconSvg('redo', 16)}</button>
       <span class="sep"></span>
@@ -551,20 +553,36 @@ function renderTree(): void {
   const q = searchInput.value.trim().toLowerCase();
   const matches = new Set<string>();
   const keep = new Set<string>();
+  const adrHit = (a: Adr) => a.title.toLowerCase().includes(q) || adrNumber(a).toLowerCase().includes(q);
   if (q) {
     for (const n of Object.values(model.nodes)) {
-      if (n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q) || n.tooltip?.toLowerCase().includes(q)) {
-        matches.add(n.id);
-        for (const a of ancestry(model, n.id)) keep.add(a);
-      }
+      const own = n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q) || n.tooltip?.toLowerCase().includes(q);
+      if (own) matches.add(n.id);
+      if (own || adrIndex?.components[n.id]?.some(adrHit)) for (const a of ancestry(model, n.id)) keep.add(a);
     }
   }
   const rows: string[] = [];
+  // A component's decisions sit right below it, above its child elements.
+  const decisionRows = (id: string, depth: number) => {
+    (adrIndex?.components[id] ?? []).forEach((a, i) => {
+      if (q && !adrHit(a)) return;
+      const cls = ['tree-row', 'tree-adr', reader.openFile === a.file ? 'selected' : '', q ? 'match' : ''].join(' ');
+      rows.push(
+        `<div class="${cls}" data-adr-of="${esc(id)}" data-adr-index="${i}" style="--depth:${depth}" role="treeitem" title="${esc(a.name)}">
+          <span class="twisty leaf"></span>
+          <span class="tree-icon">${iconSvg('decision', 13)}</span>
+          ${a.number ? `<span class="adr-num">${esc(a.number)}</span>` : ''}
+          <span class="tree-label">${highlightMatch(a.title, q)}</span>
+          <span class="adr-dot s-${a.status}" title="${statusLabel(a)}"></span>
+        </div>`,
+      );
+    });
+  };
   const walk = (ids: string[], depth: number) => {
     for (const id of ids) {
       if (q && !keep.has(id)) continue;
       const n = model!.nodes[id];
-      const hasKids = n.children.length > 0;
+      const hasKids = n.children.length > 0 || !!adrIndex?.components[id]?.length;
       const open = q ? true : treeOpen.has(id);
       const t = typeOf(n, depthOf(model!, id), hasKids);
       const visible = graph?.nodes.has(id);
@@ -580,10 +598,13 @@ function renderTree(): void {
           <span class="twisty${hasKids ? '' : ' leaf'}${open ? ' open' : ''}" data-twisty="${esc(id)}">${hasKids ? iconSvg('chevronRight', 12) : ''}</span>
           <span class="tree-icon">${iconSvg(t.icon, 14)}</span>
           <span class="tree-label">${highlightMatch(firstLine(n.label), q)}</span>
-          ${hasKids ? `<span class="tree-count">${n.children.length}</span>` : ''}
+          ${n.children.length ? `<span class="tree-count">${n.children.length}</span>` : ''}
         </div>`,
       );
-      if (hasKids && open) walk(n.children, depth + 1);
+      if (hasKids && open) {
+        decisionRows(id, depth + 1);
+        walk(n.children, depth + 1);
+      }
     }
   };
   walk(model.roots, 0);
@@ -614,12 +635,16 @@ treeEl.addEventListener('click', (ev) => {
     return;
   }
   const row = target.closest<HTMLElement>('.tree-row');
-  if (row) reveal(row.dataset.id!);
+  if (row?.dataset.adrOf) {
+    const id = row.dataset.adrOf;
+    if (view.selected !== id) setSelected(id);
+    reader.open(id, Number(row.dataset.adrIndex));
+  } else if (row) reveal(row.dataset.id!);
 });
 
 treeEl.addEventListener('dblclick', (ev) => {
   const row = (ev.target as Element).closest<HTMLElement>('.tree-row');
-  if (row && model?.nodes[row.dataset.id!]?.children.length) drillInto(row.dataset.id!);
+  if (row?.dataset.id && model?.nodes[row.dataset.id]?.children.length) drillInto(row.dataset.id);
 });
 
 $('.sidebar-foot').addEventListener('click', () => {
@@ -646,8 +671,7 @@ searchInput.addEventListener('input', () => {
 
 searchInput.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') {
-    const first = treeEl.querySelector<HTMLElement>('.tree-row.match');
-    if (first) reveal(first.dataset.id!);
+    treeEl.querySelector<HTMLElement>('.tree-row.match')?.click();
   } else if (ev.key === 'Escape') {
     searchInput.value = '';
     searchInput.dispatchEvent(new Event('input'));
@@ -933,6 +957,7 @@ app.addEventListener('click', (ev) => {
       return fitAll();
     case 'undo':
     case 'redo':
+    case 'reload':
       return vscode.postMessage({ type: el.dataset.action });
   }
 });
@@ -1099,6 +1124,7 @@ const reader = new DecisionReader($('.adr-reader'), {
     }
     return undefined;
   },
+  onChange: () => renderTree(),
 });
 
 function openDecisions(id: string): void {

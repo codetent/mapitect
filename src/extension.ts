@@ -152,12 +152,13 @@ class DocumentModels implements vscode.Disposable {
   }
 
   // Compile the current version of the document (deduplicated per version).
-  refresh(doc: vscode.TextDocument): Promise<DocState> {
+  // `force` compiles again anyway, e.g. after imported files changed on disk.
+  refresh(doc: vscode.TextDocument, force = false): Promise<DocState> {
     const key = doc.uri.toString();
     const current = this.states.get(key);
-    if (current && current.version === doc.version) return Promise.resolve(current);
+    if (!force && current && current.version === doc.version) return Promise.resolve(current);
     const pending = this.inflight.get(key);
-    if (pending && pending.version === doc.version) return pending.promise;
+    if (!force && pending && pending.version === doc.version) return pending.promise;
 
     const version = doc.version;
     const text = doc.getText();
@@ -241,7 +242,8 @@ type WebviewMessage =
   | { type: 'edit'; edit: EditOp }
   | { type: 'openFile'; path: string }
   | { type: 'undo' }
-  | { type: 'redo' };
+  | { type: 'redo' }
+  | { type: 'reload' };
 
 const EMPTY: DiagramModel = { direction: 'down', nodes: {}, roots: [], edges: [], issues: [], lineIndex: {} };
 
@@ -328,6 +330,13 @@ class Preview {
     this.post({ type: 'cursor', id });
   }
 
+  // Re-read everything from disk: the diagram with its imports, and the ADR folders.
+  private async reload(): Promise<void> {
+    await this.models.refresh(this.document, true);
+    await this.loadAdrs();
+    this.toast('Reloaded');
+  }
+
   private async loadAdrs(roots = this.adrRoots): Promise<void> {
     const base = path.dirname(this.document.uri.fsPath);
     if (roots !== this.adrRoots) {
@@ -382,6 +391,8 @@ class Preview {
       case 'undo':
       case 'redo':
         return this.travel(msg.type);
+      case 'reload':
+        return this.reload();
       case 'navigate': {
         const range = toRange(msg.range);
         const editor = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === this.document.uri.toString());
