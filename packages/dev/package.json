@@ -1,0 +1,17 @@
+{
+  "name": "@mapitect/dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev harness: the UI in a plain browser, backed by the core session in a Node server.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mapitect/core": "0.1.0",
+    "@mapitect/ui": "0.1.0"
+  }
+}

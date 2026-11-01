@@ -1,0 +1,7 @@
+/* The UI's host hooks, filled from VS Code's theme. */
+body {
+  --host-font-mono: var(--vscode-editor-font-family);
+  --host-background: var(--vscode-editor-background);
+  --host-foreground: var(--vscode-editor-foreground);
+  --host-contrast-border: var(--vscode-contrastBorder);
+}

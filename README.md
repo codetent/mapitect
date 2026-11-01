@@ -1,138 +1,56 @@
-# mapitect: interactive D2 diagrams for VS Code
+# mapitect
 
-mapitect renders [D2](https://d2lang.com) files as interactive architecture maps. You can zoom, pan, drill into systems, collapse groups, jump between the diagram and its source, and edit names, descriptions and node appearance right in the diagram. Those edits are written back into the `.d2` file.
+Interactive architecture maps from [D2](https://d2lang.com) files. Today mapitect ships as a VS Code extension; see [packages/vscode/README.md](packages/vscode/README.md) for what it does and how to use it.
 
-Parsing uses the official D2 compiler ([`@d2lang/d2`](https://www.npmjs.com/package/@d2lang/d2), the WASM build of D2), so the preview understands exactly what `d2` itself does: classes, vars, globs, imports and the rest.
+## Layout
 
-## Features
+The code is split so the same core and UI can run in other places later, such as a desktop app (Tauri) or a plain browser. This repository is an npm workspace:
 
-- **Live preview**: open any `.d2` file and press `Cmd+K V` (`Ctrl+K V`), or use the preview button in the editor title bar. The diagram re-renders as you type and animates between layouts.
-- **Zoom & pan**: drag the canvas to pan. Use the wheel, a trackpad pinch, `+`/`-` or the zoom bar to zoom. Trackpad scrolling pans; see `mapitect.wheel` to change that. `F` fits the diagram, `1` resets to 100%.
-- **Drill-down navigation**: double-click a container to focus on it, like moving between C4 levels. External elements it talks to stay visible as dashed context cards. Breadcrumbs, `Esc` or `Backspace` take you back up.
-- **Detail levels**: the *Level 1 / 2 / 3 / All* switcher collapses nested containers. Previews open at *Level 1*, showing only top-level elements, and the switcher always highlights the level you're looking at. When a container is collapsed, the connections to its contents are merged into dashed *implied connections* that show a combined label.
-- **Collapse / expand** any container in place with its corner button or `[` / `]`.
-- **Model tree & search**: the sidebar (collapsed by default; open it with the button at the top left) lists the whole hierarchy. Press `/` or `Cmd+F` to search, which also opens it, and `Enter` reveals the first match.
-- **Details panel**: shows an element's description (`tooltip`), link, incoming and outgoing connections, and children, each clickable.
-- **Selection highlighting**: selecting an element animates its connections and dims everything else. Arrow keys move the selection to the nearest element in that direction.
-- **Source sync**: selecting an element or connection highlights its declaration in an editor that already shows the file, and scrolls it into view, without moving your cursor or opening the file. The colours are themable as `mapitect.sourceHighlightBackground` and `mapitect.sourceHighlightRuler`. The other way round, the element under the editor cursor is outlined in the diagram. `Cmd/Ctrl+click` an element to jump into its source.
-- **Semantic zoom**: descriptions and labels fade out as you zoom away, and group names grow so large maps stay readable.
-- **Minimap**: click or drag it to navigate (`M` toggles it).
-- **Export**: save the diagram as SVG or PNG.
-- **Editor support**: syntax highlighting, bracket matching, folding, and the D2 compiler's errors as diagnostics. While the file doesn't compile, the preview keeps showing the last valid diagram.
-- Follows the VS Code light, dark and high-contrast themes.
+| Package | What it is | May use |
+|---|---|---|
+| [`packages/core`](packages/core) (`@mapitect/core`) | D2 compiling and visual edits, ADRs, the preview session and the UI ↔ host protocol | plain ES2022 only: no Node, DOM or VS Code APIs |
+| [`packages/ui`](packages/ui) (`@mapitect/ui`) | the interactive diagram, mounted with `mount(element, bridge)` | the DOM |
+| [`packages/vscode`](packages/vscode) (`mapitect`) | the VS Code extension: commands, diagnostics, the webview panel | Node and VS Code |
+| [`packages/dev`](packages/dev) (`@mapitect/dev`) | a browser harness for working on the UI without VS Code | Node and the DOM |
 
-## Editing in the diagram
+Each package's `tsconfig.json` only provides the types it may use, so a stray `node:` import in the core or a `vscode` call in the UI fails `npm run typecheck`.
 
-The diagram lets you change **texts** and **how nodes look**. Structure stays in the code: elements and connections are added, removed and rewired only in the `.d2` file. Every change is applied to the source as a small, targeted text edit based on the compiler's syntax tree, so your formatting and comments elsewhere are left alone.
+A host plugs into the core through the interfaces in [`packages/core/src/ports.ts`](packages/core/src/ports.ts):
 
-- **Rename**: double-click an element, a group's title or a connection label, or press `F2`.
-- **Details panel**: edit an element's name, description (`tooltip`) and link, pick its type (service, actor, gateway, data store, queue or cloud service), or set a fill color. For a connection, edit its label. Other D2 shapes still display, but you set them in the code.
-- **Right-click** an element or connection for *Rename* / *Edit label*, *Go to source* and navigation.
-- **Layout direction**: the arrow button in the toolbar cycles right → down → left → up and writes it to the file as the board's `direction:`.
-- **Undo / redo** visual edits with `⌘Z` / `⇧⌘Z` in the diagram. If you've typed in the file since then, use the editor's own undo instead.
+- `DiagramDocument`: the open `.d2` text, with unsaved changes, and a way to edit it
+- `FileSystem`: reading sibling `.d2` files and ADR folders, writing new decisions
+- `HostShell`: what only the app can do, like revealing source lines, opening files, dialogs, and sending messages to the UI
 
-Editing pauses while the file has compile errors, because the source positions would be out of date. Positions are always computed automatically.
+`DiagramSession` (one per open preview) handles the UI's messages ([`protocol.ts`](packages/core/src/protocol.ts)) using those ports. On the UI side, a host passes a `HostBridge` that carries the messages (a webview's `postMessage`, HTTP, or a direct call when both run in one page) and themes the UI through the `theme-*` body classes and `--host-*` variables.
 
-## Architecture decisions
+Code map:
 
-mapitect shows [MADR](https://adr.github.io/madr/) decision records next to the elements they belong to.
-List the folders that hold them in the `adr-folders` variable at the top of the `.d2` file, relative
-to the file or absolute. One folder or several:
-
-```d2
-vars: {
-  adr-folders: [adr; ../shared/decisions]
-}
-```
-
-Each folder has one subfolder per component, named after the element, with the ADR files inside:
-
-```
-platform.d2
-adr/
-  gateway/                     # matches the element whose key is "gateway"
-    0001-single-api-gateway.md
-    0002-rest-between-gateway-and-services.md
-  shop.services.orders/        # or the element's full id
-  shop/services/payments/      # or a path mirroring the diagram's nesting
-../shared/decisions/
-  gateway/                     # decisions from every folder are merged per element
-    0001-rate-limits.md
-```
-
-- **On the diagram**: elements with decisions get a badge with their count. Groups list the
-  count in their header.
-- **Details panel**: lists an element's decisions with number, title and status.
-- **Decision reader**: click a decision or a badge to read it, with status, date and
-  decision-makers. `←` / `→` step through the component's decisions, and links between ADRs
-  open in the reader.
-- **New decision**: right-click an element and choose *New decision…*, or use the `+` next to
-  *Decisions* in the details panel. mapitect asks for a title, creates the next numbered MADR file
-  with `status: proposed` and today's date, and opens it in the editor. The file goes next to the
-  element's existing decisions (in the first root that has some), numbered after the highest of
-  them. An element without decisions gets a new folder in the first root, named after its key, or
-  its full id when another element shares the key.
-- **Metadata**: MADR 3/4 YAML front matter (`status`, `date`, `decision-makers`, `consulted`,
-  `informed`) or MADR 2 bullets (`* Status: …`). Statuses are shown as accepted, proposed,
-  rejected, deprecated or superseded.
-- **Live**: adding or editing Markdown files, or changing `adr-folders`, updates the preview.
-  Folders that match no element are flagged in the sidebar footer.
-
-Without `adr-folders` no decisions are looked up. `README.md`, `index.md`, `template.md` and
-files starting with `.` or `_` are ignored. `examples/adr` and `examples/adr-shared` hold 9
-sample decisions for the example diagram.
-
-## Supported D2
-
-Whatever the official compiler accepts. Imports resolve against other `.d2` files in the same folder (up to two levels deep). Only the main board is shown: `layers`, `scenarios` and `steps` are compiled but not displayed yet. mapitect lays diagrams out itself with ELK so it can collapse and drill into them, so `width`, `height`, `top`, `left`, grid settings and the D2 layout engine choice are ignored.
-
-Each element type gets its own icon and accent color: actors (`person`), services, gateways (`hexagon`), data stores (`cylinder`), queues, cloud services, tables, and more.
-
-## Keyboard
-
-| Key | Action |
-| --- | --- |
-| `F2` | Rename the selection |
-| `⌘Z` / `⇧⌘Z` | Undo / redo a visual edit |
-| `F` / `1` | Fit to screen / 100% |
-| `+` `-` | Zoom |
-| Arrows | Move the selection (pan when nothing is selected; `Shift` for bigger steps) |
-| `Enter` | Expand, drill into, or open the source of the selection |
-| `Esc` / `Backspace` | Clear the selection, then go up a level |
-| `[` `]` | Collapse / expand the selected container |
-| `/`, `Cmd+F` | Search |
-| `M` | Toggle the minimap |
-
-## Settings
-
-- `mapitect.wheel`: `auto` (default; trackpad pans, mouse wheel zooms), `zoom`, or `pan`.
-- `mapitect.defaultDepth`: detail level a preview opens at (default `1`; `0` expands everything).
-- `mapitect.syncSelection`: highlight the element under the editor cursor.
+- `core/src/d2/compiler.ts`: wrapper around the official compiler (worker + WASM)
+- `core/src/d2/source.ts`: walks the compiler's syntax tree to map each statement to the node or edge it touches
+- `core/src/d2/convert.ts`: combines the compiled diagram and that source index into the model in `core/src/model.ts`
+- `core/src/d2/edits.ts`: turns visual edits (texts and appearance) into text edits
+- `core/src/adr.ts`: reads `vars.adr-folders`, finds ADR folders, parses MADR and matches folders to elements
+- `core/src/compile-cache.ts`: compiles open documents, with their `@imports`, once per version
+- `core/src/session.ts`: a preview's logic: updates, edits and undo, cursor sync, ADRs, new decisions, links, export
+- `ui/src/editing.ts`: inline rename and the context menu
+- `ui/src/decisions.ts`: the decision reader
+- `ui/src/view.ts`: drill-down focus, collapsing, and lifting edges to visible ancestors
+- `ui/src/layout.ts`: node sizing and the ELK layered layout
+- `ui/src/render.ts`: d3 rendering with animated transitions
+- `ui/src/app.ts`: camera, sidebar, details panel, minimap, keyboard
+- `vscode/src/extension.ts`: preview panels, diagnostics, editor highlights and the VS Code side of every port
+- `vscode/src/webview.ts`: the UI inside the webview, bridged with `acquireVsCodeApi`
 
 ## Development
 
 ```bash
 npm install
-npm run build      # bundles the extension and webview, copies the D2 WASM runtime to dist/d2
-npm test           # edit-engine tests against the real compiler, plus an extension-host smoke test
-npm run package    # produces mapitect-<version>.vsix
+npm run build      # bundles the extension, its webview and the dev harness; copies the D2 WASM runtime
+npm test           # core tests against the real compiler, plus an extension-host smoke test
+npm run typecheck  # every package against only the APIs it may use
+npm run package    # produces packages/vscode/mapitect-<version>.vsix
 ```
 
 Press `F5` in VS Code to start an Extension Development Host with `examples/` open.
 
-To iterate on the webview in a plain browser, run `node dev/server.mts` and open `http://localhost:5317/dev/index.html`. The server stands in for the extension host: it compiles and edits an in-memory copy of a file from `examples/` and never writes to disk. Add `?theme=light` or `?file=<name>.d2` to change the theme or the example file.
-
-Code layout:
-
-- `src/d2/compiler.ts`: wrapper around the official compiler (worker thread + WASM)
-- `src/d2/source.ts`: walks the compiler's syntax tree to map each statement to the node or edge it touches
-- `src/d2/convert.ts`: combines the compiled diagram and that source index into the preview model in `src/model.ts`
-- `src/d2/edits.ts`: turns visual edits (texts and appearance) into text edits
-- `src/extension.ts`: preview panels, compiling, diagnostics, applying edits, undo, cursor sync, export
-- `src/adr.ts`: reads `vars.adr-folders`, finds ADR folders, parses MADR and matches folders to elements
-- `webview/editing.ts`: inline rename and the context menu
-- `webview/decisions.ts`: the decision reader
-- `webview/view.ts`: drill-down focus, collapsing, and lifting edges to visible ancestors
-- `webview/layout.ts`: node sizing and the ELK layered layout
-- `webview/render.ts`: d3 rendering with animated transitions
-- `webview/main.ts`: camera, sidebar, details panel, minimap, keyboard
+To iterate on the UI in a plain browser, run `npm run dev` (or `node packages/dev/server.mts` after a build) and open `http://localhost:5317/`. The server runs the real core session against an in-memory copy of a file from `examples/` and never writes to disk. Add `?theme=light` or `?file=<name>.d2` to change the theme or the example file.

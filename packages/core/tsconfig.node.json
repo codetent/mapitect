@@ -1,0 +1,10 @@
+{
+  // Node adapters and tests.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true, // Node runs these files directly, stripping types only
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["node", "test"]
+}

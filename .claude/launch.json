@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "harness", "runtimeExecutable": "node", "runtimeArgs": ["dev/server.mts", "5317"], "port": 5317 }
+    { "name": "harness", "runtimeExecutable": "node", "runtimeArgs": ["packages/dev/server.mts", "5317"], "port": 5317 }
   ]
 }

@@ -1,0 +1,10 @@
+{
+  // The core runs anywhere (Node, a browser, a Tauri webview): no Node, DOM or VS Code types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true, // Node runs these files directly, stripping types only
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src"]
+}

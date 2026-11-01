@@ -1,0 +1,173 @@
+{
+  "name": "mapitect",
+  "displayName": "mapitect \u2014 Interactive D2 Architecture Maps",
+  "description": "Render D2 diagrams as interactive architecture maps with zoom, pan, drill-down and navigation.",
+  "version": "0.1.0",
+  "publisher": "mapitect",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "d2",
+    "diagram",
+    "architecture",
+    "c4"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:mapitect.preview"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "d2",
+        "aliases": [
+          "D2",
+          "d2"
+        ],
+        "extensions": [
+          ".d2"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "d2",
+        "scopeName": "source.d2",
+        "path": "./syntaxes/d2.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mapitect.openPreview",
+        "title": "Open Interactive Preview",
+        "category": "mapitect",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "mapitect.openPreviewToSide",
+        "title": "Open Interactive Preview to the Side",
+        "category": "mapitect",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "mapitect.exportSvg",
+        "title": "Export Diagram as SVG",
+        "category": "mapitect"
+      },
+      {
+        "command": "mapitect.exportPng",
+        "title": "Export Diagram as PNG",
+        "category": "mapitect"
+      },
+      {
+        "command": "mapitect.fit",
+        "title": "Fit Diagram to Screen",
+        "category": "mapitect"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "mapitect.openPreviewToSide",
+          "when": "editorLangId == d2",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mapitect.openPreview",
+          "when": "editorLangId == d2"
+        },
+        {
+          "command": "mapitect.openPreviewToSide",
+          "when": "editorLangId == d2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "mapitect.openPreviewToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == d2"
+      }
+    ],
+    "configuration": {
+      "title": "mapitect",
+      "properties": {
+        "mapitect.syncSelection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight the diagram element under the editor cursor."
+        },
+        "mapitect.defaultDepth": {
+          "type": "number",
+          "default": 1,
+          "description": "Detail level a preview opens at: 1 shows only top-level elements, 2 and 3 expand deeper, 0 expands everything."
+        },
+        "mapitect.wheel": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zoom",
+            "pan"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Trackpad scrolling pans, mouse wheel zooms",
+            "Wheel always zooms",
+            "Wheel pans; hold Ctrl/Cmd to zoom"
+          ],
+          "description": "What the scroll wheel does in the diagram."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "mapitect.sourceHighlightBackground",
+        "description": "Background of the source lines of the element selected in the mapitect diagram.",
+        "defaults": {
+          "dark": "#5b8cff33",
+          "light": "#3b6cf626",
+          "highContrast": "#5b8cff40",
+          "highContrastLight": "#3b6cf633"
+        }
+      },
+      {
+        "id": "mapitect.sourceHighlightRuler",
+        "description": "Scrollbar mark for the source of the element selected in the mapitect diagram.",
+        "defaults": {
+          "dark": "#5b8cffcc",
+          "light": "#3b6cf6cc",
+          "highContrast": "#5b8cff",
+          "highContrastLight": "#3b6cf6"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies --allow-missing-repository",
+    "pretest": "npm run build"
+  },
+  "devDependencies": {
+    "@mapitect/core": "0.1.0",
+    "@mapitect/ui": "0.1.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.1.0"
+  },
+  "dependencies": {
+    "@d2lang/d2": "^0.1.34"
+  }
+}

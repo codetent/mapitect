@@ -1,0 +1,19 @@
+{
+  "name": "@mapitect/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-agnostic heart of mapitect: D2 compiling and editing, ADRs, and the preview session.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./node/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@d2lang/d2": "^0.1.34"
+  }
+}
