@@ -1,7 +1,7 @@
 // Turns the full model into the graph that is currently visible, given the
 // drill-down focus and the set of collapsed containers. Edges whose endpoints
-// are hidden are "lifted" to the nearest visible ancestor (IcePanel-style
-// implied connections) and aggregated.
+// are hidden are "lifted" to the nearest visible ancestor (implied
+// connections) and aggregated.
 
 import type { DiagramEdge, DiagramModel, DiagramNode } from '../src/model.ts';
 import { typeOf, type TypeInfo } from './theme.ts';

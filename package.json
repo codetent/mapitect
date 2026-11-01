@@ -1,7 +1,7 @@
 {
   "name": "mapitect",
   "displayName": "mapitect \u2014 Interactive D2 Architecture Maps",
-  "description": "Render D2 diagrams as interactive, IcePanel-style architecture maps with zoom, pan, drill-down and navigation.",
+  "description": "Render D2 diagrams as interactive architecture maps with zoom, pan, drill-down and navigation.",
   "version": "0.1.0",
   "publisher": "mapitect",
   "license": "MIT",
@@ -17,8 +17,7 @@
     "d2",
     "diagram",
     "architecture",
-    "c4",
-    "icepanel"
+    "c4"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [

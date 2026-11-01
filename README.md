@@ -1,6 +1,6 @@
 # mapitect: interactive D2 diagrams for VS Code
 
-mapitect renders [D2](https://d2lang.com) files as interactive, IcePanel-style architecture maps. You can zoom, pan, drill into systems, collapse groups, jump between the diagram and its source, and edit names, descriptions and node appearance right in the diagram. Those edits are written back into the `.d2` file.
+mapitect renders [D2](https://d2lang.com) files as interactive architecture maps. You can zoom, pan, drill into systems, collapse groups, jump between the diagram and its source, and edit names, descriptions and node appearance right in the diagram. Those edits are written back into the `.d2` file.
 
 Parsing uses the official D2 compiler ([`@d2lang/d2`](https://www.npmjs.com/package/@d2lang/d2), the WASM build of D2), so the preview understands exactly what `d2` itself does: classes, vars, globs, imports and the rest.
 

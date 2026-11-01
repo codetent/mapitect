@@ -1337,7 +1337,7 @@ window.addEventListener('message', (ev: MessageEvent<HostMessage>) => {
       $('.file-name').textContent = msg.fileName;
       if (msg.config?.wheel) view.wheel = msg.config.wheel;
       if (first && !saved) {
-        // Open at the top level (systems collapsed), like IcePanel's context view.
+        // Open at the top level (systems collapsed), as a context view.
         const depth = msg.config?.defaultDepth ?? 1;
         view.collapsed = collapseToLevel(model, null, depth);
         view.level = depth;
