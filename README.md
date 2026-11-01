@@ -1,45 +1,128 @@
+<div align="center">
+
+<img src="packages/vscode/media/logo.svg" width="112" alt="mapitect logo">
+
 # mapitect
 
-Interactive architecture maps from [D2](https://d2lang.com) files. Today mapitect ships as a VS Code extension; see [packages/vscode/README.md](packages/vscode/README.md) for what it does and how to use it.
+**Your architecture as code, explored as a map.**
 
-## Layout
+mapitect turns plain-text [D2](https://d2lang.com) diagrams into interactive architecture maps:<br>
+zoom from the system landscape down to single services, edit right in the diagram,<br>
+and read the decisions behind every component, without leaving your editor.
 
-The code is split so the same core and UI can run in other places later, such as a desktop app (Tauri) or a plain browser. This repository is an npm workspace:
+[What it is](#what-is-mapitect) · [Features](#features) · [Getting started](#getting-started) · [Development](#development)
 
-| Package | What it is | May use |
-|---|---|---|
-| [`packages/core`](packages/core) (`@mapitect/core`) | D2 compiling and visual edits, ADRs, the preview session and the UI ↔ host protocol | plain ES2022 only: no Node, DOM or VS Code APIs |
-| [`packages/ui`](packages/ui) (`@mapitect/ui`) | the interactive diagram, mounted with `mount(element, bridge)` | the DOM |
-| [`packages/vscode`](packages/vscode) (`mapitect`) | the VS Code extension: commands, diagnostics, the webview panel | Node and VS Code |
-| [`packages/dev`](packages/dev) (`@mapitect/dev`) | a browser harness for working on the UI without VS Code | Node and the DOM |
+<br>
 
-Each package's `tsconfig.json` only provides the types it may use, so a stray `node:` import in the core or a `vscode` call in the UI fails `npm run typecheck`.
+<img src="docs/images/overview.png" alt="mapitect showing the example bookshop architecture: the API Gateway is selected, its connections are highlighted, and the details panel lists its type, color, two architecture decisions and outgoing connections" width="100%">
 
-A host plugs into the core through the interfaces in [`packages/core/src/ports.ts`](packages/core/src/ports.ts):
+</div>
 
-- `DiagramDocument`: the open `.d2` text, with unsaved changes, and a way to edit it
-- `FileSystem`: reading sibling `.d2` files and ADR folders, writing new decisions
-- `HostShell`: what only the app can do, like revealing source lines, opening files, dialogs, and sending messages to the UI
+## What is mapitect?
 
-`DiagramSession` (one per open preview) handles the UI's messages ([`protocol.ts`](packages/core/src/protocol.ts)) using those ports. On the UI side, a host passes a `HostBridge` that carries the messages (a webview's `postMessage`, HTTP, or a direct call when both run in one page) and themes the UI through the `theme-*` body classes and `--host-*` variables.
+Architecture diagrams usually live in drawing tools: nice to look at, but out of date the week after they're drawn, impossible to review in a pull request, and flat. One picture has to show everything at once.
 
-Code map:
+mapitect keeps the model where it belongs, in a `.d2` text file next to your code, and gives it a proper viewer:
 
-- `core/src/d2/compiler.ts`: wrapper around the official compiler (worker + WASM)
-- `core/src/d2/source.ts`: walks the compiler's syntax tree to map each statement to the node or edge it touches
-- `core/src/d2/convert.ts`: combines the compiled diagram and that source index into the model in `core/src/model.ts`
-- `core/src/d2/edits.ts`: turns visual edits (texts and appearance) into text edits
-- `core/src/adr.ts`: reads `vars.adr-folders`, finds ADR folders, parses MADR and matches folders to elements
-- `core/src/compile-cache.ts`: compiles open documents, with their `@imports`, once per version
-- `core/src/session.ts`: a preview's logic: updates, edits and undo, cursor sync, ADRs, new decisions, links, export
-- `ui/src/editing.ts`: inline rename and the context menu
-- `ui/src/decisions.ts`: the decision reader
-- `ui/src/view.ts`: drill-down focus, collapsing, and lifting edges to visible ancestors
-- `ui/src/layout.ts`: node sizing and the ELK layered layout
-- `ui/src/render.ts`: d3 rendering with animated transitions
-- `ui/src/app.ts`: camera, sidebar, details panel, minimap, keyboard
-- `vscode/src/extension.ts`: preview panels, diagnostics, editor highlights and the VS Code side of every port
-- `vscode/src/webview.ts`: the UI inside the webview, bridged with `acquireVsCodeApi`
+- **One file, many levels.** Write the whole system once with nested containers. mapitect shows it like a C4 map: start with the landscape, then drill into a system, a container, a service. Connections into collapsed groups are merged, so every level stays readable.
+- **Text stays the source of truth.** Renaming an element, changing its description, type or color in the diagram becomes a small, targeted edit in the `.d2` file. Your formatting and comments are kept, and the change shows up in your diff like any other.
+- **Decisions live with the components.** Point mapitect at your [MADR](https://adr.github.io/madr/) decision records and each element shows the decisions that shaped it, readable right next to the map.
+- **Real D2.** The official D2 compiler (WASM) parses the file, so classes, vars, globs and imports work exactly as they do in `d2` itself.
+
+```d2
+shop: Bookshop {
+  web: Storefront { tooltip: React app serving the public shop. }
+  gateway: API Gateway { shape: hexagon }
+  backend: Backend {
+    orders: Order Service
+    payments: Payment Service
+  }
+  web -> gateway: HTTPS
+  gateway -> backend.orders: REST
+}
+customer: Reader { shape: person }
+customer -> shop.web: browses
+```
+
+The [example](examples/platform.d2) is a small online bookshop that uses every feature; open it to get a feel for mapitect.
+
+## Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🧭 Navigate
+- **Detail levels** 1 / 2 / 3 / All collapse nested containers
+- **Drill down** into any container, with the elements it talks to kept as context
+- **Zoom, pan, minimap** and semantic zoom that fades details out as you zoom away
+- **Search** and a model tree of the whole hierarchy
+- **Selection highlighting** that traces an element's connections
+
+</td>
+<td width="50%" valign="top">
+
+### ✏️ Edit
+- **Rename** elements and connection labels inline (`F2` or double-click)
+- **Details panel** for description, link, type and fill color
+- **Layout direction** right / down / left / up, written back to the file
+- **Undo / redo** for visual edits
+- Structure stays in the code: adding or rewiring elements is done in the `.d2` file
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🔗 Stay in sync with the source
+- **Live preview** that re-renders and animates as you type
+- Selecting an element **highlights its declaration** in the editor, and the element under your cursor is outlined in the map
+- `Cmd/Ctrl+click` jumps to the source
+- Compiler errors as diagnostics; the last valid diagram stays visible
+
+</td>
+<td width="50%" valign="top">
+
+### 📜 Architecture decisions
+- Badges with the number of **ADRs per element**
+- A **decision reader** with status, date and decision-makers
+- **New decision…** creates the next numbered MADR file for an element
+- Decisions from several folders are merged per element and update live
+
+</td>
+</tr>
+</table>
+
+<br>
+
+<div align="center">
+<img src="docs/images/decisions.png" alt="The decision reader showing ADR-0001, 'One API gateway in front of all services', next to the selected API Gateway in the map" width="100%">
+<br><sub>The decision reader: the record behind the selected component, next to the map.</sub>
+</div>
+
+<br>
+
+Everything follows the VS Code light, dark and high-contrast themes, and diagrams export to SVG or PNG. The full feature list, keyboard shortcuts, settings and the ADR folder conventions are in the [extension's README](packages/vscode/README.md).
+
+## Getting started
+
+mapitect currently ships as a VS Code extension. Build and install it from this repository:
+
+```bash
+npm install
+npm run package
+code --install-extension packages/vscode/mapitect-0.1.0.vsix
+```
+
+Then open [`examples/platform.d2`](examples/platform.d2) and press `Cmd+K V` (`Ctrl+K V` on Windows and Linux), or click the preview button in the editor title bar.
+
+To attach decision records to a diagram, list their folders in the `adr-folders` variable. Each folder has one subfolder per element:
+
+```d2
+vars: {
+  adr-folders: [adr; ../shared/decisions]
+}
+```
 
 ## Development
 
@@ -54,3 +137,7 @@ npm run package    # produces packages/vscode/mapitect-<version>.vsix
 Press `F5` in VS Code to start an Extension Development Host with `examples/` open.
 
 To iterate on the UI in a plain browser, run `npm run dev` (or `node packages/dev/server.mts` after a build) and open `http://localhost:5317/`. The server runs the real core session against an in-memory copy of a file from `examples/` and never writes to disk. Add `?theme=light` or `?file=<name>.d2` to change the theme or the example file.
+
+## License
+
+[MIT](LICENSE)
