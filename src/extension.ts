@@ -7,7 +7,7 @@ import { D2Compiler } from './d2/compiler.ts';
 import type { Built } from './d2/convert.ts';
 import { EditError, planEdit } from './d2/edits.ts';
 
-const VIEW_TYPE = 'archer.preview';
+const VIEW_TYPE = 'mapitect.preview';
 
 let compiler: D2Compiler | undefined;
 
@@ -75,11 +75,11 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     diagnostics,
     models,
-    vscode.commands.registerCommand('archer.openPreview', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Active)),
-    vscode.commands.registerCommand('archer.openPreviewToSide', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Beside)),
-    vscode.commands.registerCommand('archer.exportSvg', () => activePreview()?.post({ type: 'command', command: 'export-svg' })),
-    vscode.commands.registerCommand('archer.exportPng', () => activePreview()?.post({ type: 'command', command: 'export-png' })),
-    vscode.commands.registerCommand('archer.fit', () => activePreview()?.post({ type: 'command', command: 'fit' })),
+    vscode.commands.registerCommand('mapitect.openPreview', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Active)),
+    vscode.commands.registerCommand('mapitect.openPreviewToSide', (uri?: vscode.Uri) => open(uri, vscode.ViewColumn.Beside)),
+    vscode.commands.registerCommand('mapitect.exportSvg', () => activePreview()?.post({ type: 'command', command: 'export-svg' })),
+    vscode.commands.registerCommand('mapitect.exportPng', () => activePreview()?.post({ type: 'command', command: 'export-png' })),
+    vscode.commands.registerCommand('mapitect.fit', () => activePreview()?.post({ type: 'command', command: 'fit' })),
 
     vscode.workspace.onDidOpenTextDocument((doc) => isD2(doc) && schedule(doc, 0)),
     vscode.workspace.onDidCloseTextDocument((doc) => {
@@ -91,11 +91,11 @@ export function activate(context: vscode.ExtensionContext): void {
       for (const p of previews.values()) p.restoreHighlight();
     }),
     vscode.window.onDidChangeTextEditorSelection((ev) => {
-      if (!vscode.workspace.getConfiguration('archer').get('syncSelection', true)) return;
+      if (!vscode.workspace.getConfiguration('mapitect').get('syncSelection', true)) return;
       previews.get(ev.textEditor.document.uri.toString())?.syncCursor(ev.selections[0].active.line);
     }),
     vscode.workspace.onDidChangeConfiguration((ev) => {
-      if (!ev.affectsConfiguration('archer')) return;
+      if (!ev.affectsConfiguration('mapitect')) return;
       for (const p of previews.values()) {
         const state = models.get(p.document);
         if (state) p.update(state);
@@ -252,11 +252,11 @@ class Preview {
   private ready = false;
   private lastCursor: string | null = null;
   // The selected element's declaration, highlighted in the editor without moving the cursor.
-  // Archer's own theme colours: the built-in range highlight is nearly invisible in many dark themes.
+  // mapitect's own theme colours: the built-in range highlight is nearly invisible in many dark themes.
   private readonly selection = vscode.window.createTextEditorDecorationType({
-    backgroundColor: new vscode.ThemeColor('archer.sourceHighlightBackground'),
+    backgroundColor: new vscode.ThemeColor('mapitect.sourceHighlightBackground'),
     isWholeLine: true,
-    overviewRulerColor: new vscode.ThemeColor('archer.sourceHighlightRuler'),
+    overviewRulerColor: new vscode.ThemeColor('mapitect.sourceHighlightRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Full,
   });
   private highlighted: vscode.Range | undefined;
@@ -312,7 +312,7 @@ class Preview {
   update(state: DocState): void {
     const roots = state.built?.adrFolders ?? [];
     if (!sameList(roots, this.adrRoots)) return void this.loadAdrs(roots); // updates again once scanned
-    const config = vscode.workspace.getConfiguration('archer');
+    const config = vscode.workspace.getConfiguration('mapitect');
     const model = state.built ? this.resolveIcons(state.built.model) : EMPTY;
     this.post({
       type: 'update',

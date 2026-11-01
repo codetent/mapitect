@@ -1,4 +1,4 @@
-/* Archer webview — dark defaults, VS Code theme aware.
+/* mapitect webview — dark defaults, VS Code theme aware.
    Tokens live on body so theme overrides re-resolve the derived colors. */
 
 body {

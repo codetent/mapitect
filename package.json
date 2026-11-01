@@ -1,9 +1,9 @@
 {
-  "name": "archer-d2",
-  "displayName": "Archer \u2014 Interactive D2 Diagrams",
+  "name": "mapitect",
+  "displayName": "mapitect \u2014 Interactive D2 Architecture Maps",
   "description": "Render D2 diagrams as interactive, IcePanel-style architecture maps with zoom, pan, drill-down and navigation.",
   "version": "0.1.0",
-  "publisher": "archer",
+  "publisher": "mapitect",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -21,7 +21,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onWebviewPanel:archer.preview"
+    "onWebviewPanel:mapitect.preview"
   ],
   "contributes": {
     "languages": [
@@ -46,74 +46,74 @@
     ],
     "commands": [
       {
-        "command": "archer.openPreview",
+        "command": "mapitect.openPreview",
         "title": "Open Interactive Preview",
-        "category": "Archer",
+        "category": "mapitect",
         "icon": "$(type-hierarchy)"
       },
       {
-        "command": "archer.openPreviewToSide",
+        "command": "mapitect.openPreviewToSide",
         "title": "Open Interactive Preview to the Side",
-        "category": "Archer",
+        "category": "mapitect",
         "icon": "$(open-preview)"
       },
       {
-        "command": "archer.exportSvg",
+        "command": "mapitect.exportSvg",
         "title": "Export Diagram as SVG",
-        "category": "Archer"
+        "category": "mapitect"
       },
       {
-        "command": "archer.exportPng",
+        "command": "mapitect.exportPng",
         "title": "Export Diagram as PNG",
-        "category": "Archer"
+        "category": "mapitect"
       },
       {
-        "command": "archer.fit",
+        "command": "mapitect.fit",
         "title": "Fit Diagram to Screen",
-        "category": "Archer"
+        "category": "mapitect"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "archer.openPreviewToSide",
+          "command": "mapitect.openPreviewToSide",
           "when": "editorLangId == d2",
           "group": "navigation"
         }
       ],
       "commandPalette": [
         {
-          "command": "archer.openPreview",
+          "command": "mapitect.openPreview",
           "when": "editorLangId == d2"
         },
         {
-          "command": "archer.openPreviewToSide",
+          "command": "mapitect.openPreviewToSide",
           "when": "editorLangId == d2"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "archer.openPreviewToSide",
+        "command": "mapitect.openPreviewToSide",
         "key": "ctrl+k v",
         "mac": "cmd+k v",
         "when": "editorLangId == d2"
       }
     ],
     "configuration": {
-      "title": "Archer",
+      "title": "mapitect",
       "properties": {
-        "archer.syncSelection": {
+        "mapitect.syncSelection": {
           "type": "boolean",
           "default": true,
           "description": "Highlight the diagram element under the editor cursor."
         },
-        "archer.defaultDepth": {
+        "mapitect.defaultDepth": {
           "type": "number",
           "default": 1,
           "description": "Detail level a preview opens at: 1 shows only top-level elements, 2 and 3 expand deeper, 0 expands everything."
         },
-        "archer.wheel": {
+        "mapitect.wheel": {
           "type": "string",
           "enum": [
             "auto",
@@ -132,8 +132,8 @@
     },
     "colors": [
       {
-        "id": "archer.sourceHighlightBackground",
-        "description": "Background of the source lines of the element selected in the Archer diagram.",
+        "id": "mapitect.sourceHighlightBackground",
+        "description": "Background of the source lines of the element selected in the mapitect diagram.",
         "defaults": {
           "dark": "#5b8cff33",
           "light": "#3b6cf626",
@@ -142,8 +142,8 @@
         }
       },
       {
-        "id": "archer.sourceHighlightRuler",
-        "description": "Scrollbar mark for the source of the element selected in the Archer diagram.",
+        "id": "mapitect.sourceHighlightRuler",
+        "description": "Scrollbar mark for the source of the element selected in the mapitect diagram.",
         "defaults": {
           "dark": "#5b8cffcc",
           "light": "#3b6cf6cc",

@@ -1,7 +1,7 @@
 # Architecture decision records
 
 Decisions for the components in [`../platform.d2`](../platform.d2), in [MADR](https://adr.github.io/madr/) format.
-Archer lists them per element in the diagram's details panel and opens them in its decision reader.
+mapitect lists them per element in the diagram's details panel and opens them in its decision reader.
 
 ## Layout
 

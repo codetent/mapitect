@@ -34,8 +34,8 @@ function harness(initialText: string) {
     revealRange() {},
   };
   const doc = {
-    uri: makeUri('/tmp/archer/diagram.d2'),
-    fileName: '/tmp/archer/diagram.d2',
+    uri: makeUri('/tmp/mapitect/diagram.d2'),
+    fileName: '/tmp/mapitect/diagram.d2',
     languageId: 'd2',
     get version() {
       return version;
@@ -216,7 +216,7 @@ test('extension compiles with the official D2 build, applies text edits and sync
     ext = require(path.join(root, 'dist/extension.js'));
     ext!.activate({ subscriptions: [], extensionUri: makeUri(root) });
 
-    await h.commands['archer.openPreviewToSide']();
+    await h.commands['mapitect.openPreviewToSide']();
     assert.match(h.panel.webview.html, /Content-Security-Policy/);
     await h.send({ type: 'ready' });
     const first = await until(() => h.posted.find((m) => m.type === 'update'), 'first update');
@@ -270,10 +270,10 @@ test('extension compiles with the official D2 build, applies text edits and sync
     h.setText('vars: {\n  adr-folders: [adr; ../shared/decisions]\n}\napi -> db\n');
     const withAdrs = await until(() => h.posted.find((m) => m.type === 'update' && m.adrs?.roots.length), 'ADR roots');
     assert.deepEqual(withAdrs.adrs.roots, ['adr', '../shared/decisions']);
-    assert.deepEqual(h.watched, ['/tmp/archer/adr', '/tmp/shared/decisions']);
+    assert.deepEqual(h.watched, ['/tmp/mapitect/adr', '/tmp/shared/decisions']);
     h.setText('vars: {\n  adr-folders: docs/adr\n}\napi -> db\n');
     await until(() => h.posted.find((m) => m.type === 'update' && m.adrs?.roots[0] === 'docs/adr'), 'changed ADR roots');
-    assert.deepEqual(h.watched, ['/tmp/archer/docs/adr'], 'old watchers are dropped');
+    assert.deepEqual(h.watched, ['/tmp/mapitect/docs/adr'], 'old watchers are dropped');
 
     // Compile errors become diagnostics; the preview keeps the last good model.
     h.setText('api -> db\nweb: {\n');

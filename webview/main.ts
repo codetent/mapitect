@@ -54,7 +54,7 @@ const app = document.getElementById('app')!;
 app.innerHTML = `
   <aside class="sidebar glass">
     <div class="sidebar-head">
-      <div class="brand"><span class="brand-mark">${iconSvg('layers', 16)}</span><span class="file-name">Archer</span></div>
+      <div class="brand"><span class="brand-mark">${iconSvg('layers', 16)}</span><span class="file-name">mapitect</span></div>
       <button class="icon-btn" data-action="sidebar" title="Hide sidebar">${iconSvg('sidebar', 16)}</button>
     </div>
     <label class="search">${iconSvg('search', 14)}<input type="text" placeholder="Search elements" spellcheck="false" /><kbd>/</kbd></label>

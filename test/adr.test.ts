@@ -98,7 +98,7 @@ test('folders match by key, full id, nested path or label', () => {
 });
 
 test('scans several roots, skipping READMEs, templates and hidden files', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'archer-adr-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'mapitect-adr-'));
   try {
     await mkdir(path.join(dir, 'adr', 'bff'), { recursive: true });
     await mkdir(path.join(dir, 'more', 'k2', 'services', 'content'), { recursive: true });
