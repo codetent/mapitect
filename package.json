@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces --if-present",
     "watch": "npm run watch -w mapitect & npm run watch -w @mapitect/dev & wait",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "oxlint --deny-warnings",
     "test": "npm test --workspaces --if-present",
     "package": "npm run package -w mapitect",
     "dev": "npm run build -w @mapitect/dev && node packages/dev/server.mts"
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
+    "oxlint": "^1.90.0",
     "typescript": "^7.0.2"
   }
 }

@@ -154,7 +154,7 @@ export function formatKey(segs: string[]): string {
   return segs.map(formatKeySeg).join('.');
 }
 
-const SAFE_VALUE = /^[^\s;{}#|"'`\[\]$][^;{}\n|"`$]*$/;
+const SAFE_VALUE = /^[^\s;{}#|"'`[\]$][^;{}\n|"`$]*$/;
 
 export function formatValue(value: string): string {
   const v = value.trim();

@@ -170,8 +170,9 @@ test('ADRs come from the folders in vars, are watched, and new decisions are wri
   const created = '/work/shop/adr/api/0002-version-the-api.md';
   assert.match(s.files[created], /^---\nstatus: proposed\n/);
   const edit = s.calls.find((c) => c[0] === 'editFile');
-  assert.equal(edit?.[1], created);
-  assert.equal((edit?.[2] as { line: number }).line, s.files[created].split('\n').indexOf('## Context and Problem Statement') + 2);
+  assert.ok(edit);
+  assert.equal(edit[1], created);
+  assert.equal((edit[2] as { line: number }).line, s.files[created].split('\n').indexOf('## Context and Problem Statement') + 2);
 
   // Once the new file is scanned, the next one is numbered after it; an existing file is never overwritten.
   await s.settle();

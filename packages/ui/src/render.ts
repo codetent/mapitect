@@ -1,7 +1,7 @@
 import { select, type Selection } from 'd3-selection';
 import 'd3-transition';
 import { easeCubicInOut } from 'd3-ease';
-import { CARD, GROUP, TABLE, type Point, type Scene, type SEdge, type SNode } from './layout.ts';
+import { CARD, TABLE, type Point, type Scene, type SEdge, type SNode } from './layout.ts';
 import { ICONS, isColor, isDark, measure, type IconName } from './theme.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
