@@ -7,7 +7,7 @@ import type { HostBridge } from './bridge.ts';
 import { adrNumber, DecisionReader, statusLabel, statusPill } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
 import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
-import { iconSvg, Renderer, type EdgeStyle } from './render.ts';
+import { iconSvg, Renderer } from './render.ts';
 import { exportPng, exportSvg } from './export.ts';
 import { typeOf, plainLabel, type IconName } from './theme.ts';
 import { ancestry, buildView, collapseToLevel, depthOf, isWithin, type VEdge, type VisibleGraph } from './view.ts';
@@ -22,7 +22,6 @@ interface PersistedState {
   transform?: { x: number; y: number; k: number };
   sidebar: boolean;
   minimap: boolean;
-  edgeStyle: EdgeStyle;
 }
 
 export function mount(app: HTMLElement, host: HostBridge): void {
@@ -55,7 +54,6 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         </div>
         <span class="sep"></span>
         <button class="icon-btn" data-action="direction" title="Layout direction (writes direction: … to the file)">${iconSvg('arrowRight', 16)}</button>
-        <button class="icon-btn" data-action="edges" title="Edge style">${iconSvg('orthogonal', 16)}</button>
         <span class="sep"></span>
         <div class="menu-wrap">
           <button class="icon-btn" data-action="export" title="Export">${iconSvg('download', 16)}</button>
@@ -110,7 +108,6 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     cursor: null as string | null,
     sidebar: saved?.sidebar ?? false,
     minimap: saved?.minimap ?? true,
-    edgeStyle: (saved?.edgeStyle ?? 'orthogonal') as EdgeStyle,
     level: null as number | null,
     wheel: 'auto',
   };
@@ -123,6 +120,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   let docUri = saved?.uri;
   let layoutSeq = 0;
   const treeOpen = new Set<string>();
+  const treeShut = new Set<string>(); // folders the user closed; they start open
 
   const renderer = new Renderer(world, {
     select: (id, ev) => {
@@ -139,8 +137,8 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     },
     contextMenu: (id, ev) => openContextMenu(id, ev),
     decisions: (id) => openDecisions(id),
+    openLink: (url) => host.send({ type: 'openLink', url }),
   });
-  renderer.edgeStyle = view.edgeStyle;
 
   function persist(): void {
     const t = currentTransform();
@@ -151,7 +149,6 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       transform: { x: t.x, y: t.y, k: t.k },
       sidebar: view.sidebar,
       minimap: view.minimap,
-      edgeStyle: view.edgeStyle,
     });
   }
 
@@ -538,13 +535,27 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       }
     }
     const rows: string[] = [];
-    // A component's decisions sit right below it, above its child elements.
+    // A component lists its child elements and its decisions in two folders.
+    const folderRow = (id: string, folder: 'components' | 'adrs', count: number, depth: number): boolean => {
+      const key = `${folder}:${id}`;
+      const open = q ? true : !treeShut.has(key);
+      rows.push(
+        `<div class="tree-row tree-folder" data-folder="${esc(key)}" style="--depth:${depth}" role="treeitem">
+          <span class="twisty${open ? ' open' : ''}">${iconSvg('chevronRight', 12)}</span>
+          <span class="tree-icon">${iconSvg('folder', 13)}</span>
+          <span class="tree-label">${folder === 'components' ? 'Components' : 'ADRs'}</span>
+          <span class="tree-count">${count}</span>
+        </div>`,
+      );
+      return open;
+    };
     const decisionRows = (id: string, depth: number) => {
-      (adrIndex?.components[id] ?? []).forEach((a, i) => {
-        if (q && !adrHit(a)) return;
+      const list = (adrIndex?.components[id] ?? []).map((a, i) => ({ a, i })).filter(({ a }) => !q || adrHit(a));
+      if (!list.length || !folderRow(id, 'adrs', list.length, depth)) return;
+      for (const { a, i } of list) {
         const cls = ['tree-row', 'tree-adr', reader.openFile === a.file ? 'selected' : '', q ? 'match' : ''].join(' ');
         rows.push(
-          `<div class="${cls}" data-adr-of="${esc(id)}" data-adr-index="${i}" style="--depth:${depth}" role="treeitem" title="${esc(a.name)}">
+          `<div class="${cls}" data-adr-of="${esc(id)}" data-adr-index="${i}" style="--depth:${depth + 1}" role="treeitem" title="${esc(a.name)}">
             <span class="twisty leaf"></span>
             <span class="tree-icon">${iconSvg('decision', 13)}</span>
             ${a.number ? `<span class="adr-num">${esc(a.number)}</span>` : ''}
@@ -552,7 +563,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
             <span class="adr-dot s-${a.status}" title="${statusLabel(a)}"></span>
           </div>`,
         );
-      });
+      }
     };
     const walk = (ids: string[], depth: number) => {
       for (const id of ids) {
@@ -574,12 +585,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
             <span class="twisty${hasKids ? '' : ' leaf'}${open ? ' open' : ''}" data-twisty="${esc(id)}">${hasKids ? iconSvg('chevronRight', 12) : ''}</span>
             <span class="tree-icon">${iconSvg(t.icon, 14)}</span>
             <span class="tree-label">${highlightMatch(firstLine(n.label), q)}</span>
-            ${n.children.length ? `<span class="tree-count">${n.children.length}</span>` : ''}
           </div>`,
         );
         if (hasKids && open) {
+          const kids = q ? n.children.filter((c) => keep.has(c)) : n.children;
+          if (kids.length && folderRow(id, 'components', kids.length, depth + 1)) walk(kids, depth + 2);
           decisionRows(id, depth + 1);
-          walk(n.children, depth + 1);
         }
       }
     };
@@ -611,7 +622,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       return;
     }
     const row = target.closest<HTMLElement>('.tree-row');
-    if (row?.dataset.adrOf) {
+    if (row?.dataset.folder) {
+      const key = row.dataset.folder;
+      if (treeShut.has(key)) treeShut.delete(key);
+      else treeShut.add(key);
+      renderTree();
+    } else if (row?.dataset.adrOf) {
       const id = row.dataset.adrOf;
       if (view.selected !== id) setSelected(id);
       reader.open(id, Number(row.dataset.adrIndex));
@@ -869,7 +885,6 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     const dirBtn = $('[data-action="direction"]');
     const dir = model?.direction ?? 'down';
     dirBtn.style.transform = `rotate(${{ right: 0, down: 90, left: 180, up: 270 }[dir]}deg)`;
-    $('[data-action="edges"]').innerHTML = iconSvg(view.edgeStyle === 'curved' ? 'curve' : 'orthogonal', 16);
     app.classList.toggle('no-sidebar', !view.sidebar);
     app.classList.toggle('no-minimap', !view.minimap);
   }
@@ -916,10 +931,6 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         const cur = model?.direction ?? 'down';
         return sendEdit({ op: 'setDirection', value: order[(order.indexOf(cur) + 1) % 4] });
       }
-      case 'edges':
-        view.edgeStyle = view.edgeStyle === 'curved' ? 'orthogonal' : 'curved';
-        renderer.edgeStyle = view.edgeStyle;
-        return void refresh({ animate: true });
       case 'export':
         $('.menu-wrap').classList.toggle('open');
         return;

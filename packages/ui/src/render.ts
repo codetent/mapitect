@@ -7,8 +7,6 @@ import { ICONS, isColor, isDark, measure, type IconName } from './theme.ts';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sel = Selection<any, any, any, any>;
 
-export type EdgeStyle = 'orthogonal' | 'curved';
-
 export interface RenderHandlers {
   select(id: string | null, event: MouseEvent): void;
   activate(id: string, event: MouseEvent): void; // double click
@@ -18,6 +16,7 @@ export interface RenderHandlers {
   hover(id: string | null): void;
   contextMenu(id: string | null, ev: MouseEvent): void; // id is a node id or "edge:<id>"
   decisions(id: string): void; // the ADR badge was clicked
+  openLink(url: string): void; // the link mark was clicked
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -43,7 +42,6 @@ export class Renderer {
   private readonly labelLayer: Sel;
   private readonly annotationLayer: Sel;
   scene: Scene | null = null;
-  edgeStyle: EdgeStyle = 'orthogonal';
   adrCounts = new Map<string, number>(); // element id -> number of ADRs
 
   constructor(world: SVGGElement, private readonly on: RenderHandlers) {
@@ -423,6 +421,7 @@ export class Renderer {
       chip.append('rect').attr('width', w).attr('height', CARD.footer).attr('rx', 11);
       icon(chip, 'layers', 12, 9, 5);
       chip.append('text').attr('x', 26).attr('y', 15).text(c.footer);
+      onClick(chip, () => this.on.toggle(v.id));
       const expand = g.append('g').attr('class', 'btn btn-toggle').attr('transform', `translate(${d.w - 40},${d.h - 40})`);
       button(expand, 'expand', 'Expand', () => this.on.toggle(v.id));
     }
@@ -437,18 +436,16 @@ export class Renderer {
       badge.append('rect').attr('width', w).attr('height', 20).attr('rx', 10);
       icon(badge, 'decision', 12, 7, 4);
       badge.append('text').attr('x', 22).attr('y', 10).attr('dy', '0.35em').text(label);
-      badge
-        .on('click', (ev: MouseEvent) => {
-          ev.stopPropagation();
-          this.on.decisions(v.id);
-        })
-        .on('dblclick', (ev: MouseEvent) => ev.stopPropagation());
+      onClick(badge, () => this.on.decisions(v.id));
     }
 
     if (v.node.link) {
       const l = g.append('g').attr('class', 'link-mark').attr('transform', `translate(${d.w - 26},12)`);
-      l.append('title').text(v.node.link);
+      const url = v.node.link;
+      l.append('title').text(`Open ${url}`);
+      l.append('rect').attr('class', 'hit').attr('x', -5).attr('y', -5).attr('width', 23).attr('height', 23).attr('rx', 6);
       icon(l, 'external', 13);
+      onClick(l, () => this.on.openLink(url));
     }
   }
 
@@ -492,10 +489,9 @@ export class Renderer {
     const srcShape = e.v.srcArrowhead ?? 'triangle';
     if (e.v.dstArrow) pullBack(linePts, linePts.length - 1, linePts.length - 2, dstShape === 'arrow' ? 1 : len - 2);
     if (e.v.srcArrow) pullBack(linePts, 0, 1, srcShape === 'arrow' ? 1 : len - 2);
-    const radius = this.edgeStyle === 'curved' ? 400 : 12;
     return {
-      line: roundedPath(linePts, radius),
-      hit: roundedPath(pts, radius),
+      line: roundedPath(linePts, 12),
+      hit: roundedPath(pts, 12),
       dst: e.v.dstArrow ? arrowhead(pts[pts.length - 1], pts[pts.length - 2], dstShape, len) : '',
       src: e.v.srcArrow ? arrowhead(pts[0], pts[1], srcShape, len) : '',
       dstOpen: dstShape === 'arrow' || dstShape === 'diamond' || dstShape === 'circle',
@@ -526,14 +522,19 @@ function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile
   icon(parent, fallback, size, off, off);
 }
 
-function button(g: Sel, name: IconName, title: string, onClick: () => void): void {
+function button(g: Sel, name: IconName, title: string, handler: () => void): void {
   g.selectAll('*').remove();
   g.append('title').text(title);
   g.append('rect').attr('width', 28).attr('height', 28).attr('rx', 8);
   icon(g, name, 14, 7, 7);
+  onClick(g, handler);
+}
+
+// A control inside a card: its clicks must not select or activate the card.
+function onClick(g: Sel, handler: () => void): void {
   g.on('click', (ev: MouseEvent) => {
     ev.stopPropagation();
-    onClick();
+    handler();
   }).on('dblclick', (ev: MouseEvent) => ev.stopPropagation());
 }
 

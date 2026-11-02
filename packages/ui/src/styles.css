@@ -324,6 +324,20 @@ kbd {
   color: var(--faint);
 }
 
+/* The Components and ADRs folders under a component. */
+.tree-folder {
+  height: 26px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tree-folder .tree-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--faint);
+  background: none;
+}
+
 /* A component's decisions, listed under it in the tree. */
 .tree-adr {
   height: 26px;
@@ -1172,8 +1186,22 @@ g.btn:hover .glyph {
   fill: var(--accent);
 }
 
+.footer-chip,
+.link-mark {
+  cursor: pointer;
+}
+
+.footer-chip:hover rect {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .link-mark .glyph {
   stroke: var(--faint);
+  transition: stroke 0.15s;
+}
+
+.link-mark:hover .glyph {
+  stroke: var(--primary);
 }
 
 .free-text {
