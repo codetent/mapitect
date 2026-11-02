@@ -4,6 +4,8 @@ mapitect renders [D2](https://d2lang.com) files as interactive architecture maps
 
 Parsing uses the official D2 compiler ([`@d2lang/d2`](https://www.npmjs.com/package/@d2lang/d2), the WASM build of D2), so the preview understands exactly what `d2` itself does: classes, vars, globs, imports and the rest.
 
+<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/overview.png" alt="mapitect showing the example bookshop architecture: the API Gateway is selected, its connections are highlighted, and the details panel lists its type, color, two architecture decisions and outgoing connections" width="100%">
+
 ## Features
 
 - **Live preview**: open any `.d2` file and press `Cmd+K V` (`Ctrl+K V`), or use the preview button in the editor title bar. The diagram re-renders as you type and animates between layouts.
@@ -45,6 +47,8 @@ vars: {
 }
 ```
 
+<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/decisions.png" alt="The decision reader showing ADR-0001, 'One API gateway in front of all services', next to the selected API Gateway in the map" width="100%">
+
 Each folder has one subfolder per component, named after the element, with the ADR files inside:
 
 ```
@@ -79,8 +83,9 @@ adr/
   Folders that match no element are flagged in the sidebar footer.
 
 Without `adr-folders` no decisions are looked up. `README.md`, `index.md`, `template.md` and
-files starting with `.` or `_` are ignored. `examples/adr` and `examples/adr-shared` hold 9
-sample decisions for the example diagram.
+files starting with `.` or `_` are ignored. The repository's
+[`examples`](https://github.com/codetent/mapitect/tree/main/examples) folder holds an example
+diagram with 9 sample decisions in `adr` and `adr-shared`.
 
 ## Supported D2
 

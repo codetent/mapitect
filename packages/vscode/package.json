@@ -29,6 +29,15 @@
     "c4"
   ],
   "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "mapitect reads diagrams, imports and decision records from the local file system."
+    }
+  },
   "activationEvents": [
     "onWebviewPanel:mapitect.preview"
   ],

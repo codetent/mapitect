@@ -3,9 +3,11 @@
 !dist/webview.js
 !dist/webview.css
 !dist/d2/**
+!dist/THIRD_PARTY_NOTICES.txt
 !media/**
 !syntaxes/**
 !language-configuration.json
 !package.json
 !README.md
+!CHANGELOG.md
 !LICENSE
