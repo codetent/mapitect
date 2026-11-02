@@ -107,7 +107,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     hover: null as string | null,
     cursor: null as string | null,
     sidebar: saved?.sidebar ?? false,
-    minimap: saved?.minimap ?? true,
+    minimap: saved?.minimap ?? false,
     level: null as number | null,
     wheel: 'auto',
   };
