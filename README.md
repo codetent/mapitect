@@ -26,6 +26,7 @@ mapitect keeps the model where it belongs, in a `.d2` text file next to your cod
 
 - **One file, many levels.** Write the whole system once with nested containers. mapitect shows it like a C4 map: start with the landscape, then drill into a system, a container, a service. Connections into collapsed groups are merged, so every level stays readable.
 - **Text stays the source of truth.** Renaming an element, changing its description, type or color in the diagram becomes a small, targeted edit in the `.d2` file. Your formatting and comments are kept, and the change shows up in your diff like any other.
+- **Lifecycle on the map.** Mark elements as `future`, `deprecated` or `removed` with `vars: {status: …}`. They are drawn differently, and a filter switches between the current and the target architecture.
 - **Decisions live with the components.** Point mapitect at your [MADR](https://adr.github.io/madr/) decision records and each element shows the decisions that shaped it, readable right next to the map.
 - **Real D2.** The official D2 compiler (WASM) parses the file, so classes, vars, globs and imports work exactly as they do in `d2` itself.
 
@@ -58,13 +59,14 @@ The [example](examples/platform.d2) is a small online bookshop that uses every f
 - **Zoom, pan, minimap** and semantic zoom that fades details out as you zoom away
 - **Search** and a model tree of the whole hierarchy
 - **Selection highlighting** that traces an element's connections
+- **Status filter** to show the current state, the target state or only what changes
 
 </td>
 <td width="50%" valign="top">
 
 ### ✏️ Edit
 - **Rename** elements and connection labels inline (`F2` or double-click)
-- **Details panel** for description, link, type and fill color
+- **Details panel** for description, link, type, lifecycle status and fill color
 - **Layout direction** right / down / left / up, written back to the file
 - **Undo / redo** for visual edits
 - Structure stays in the code: adding or rewiring elements is done in the `.d2` file

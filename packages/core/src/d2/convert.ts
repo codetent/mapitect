@@ -1,6 +1,6 @@
 import type { CompileResponse, Connection, Shape } from '@d2lang/d2';
-import type { DiagramEdge, DiagramModel, DiagramNode, Direction, SourceRange, TableField } from '../model.ts';
-import { boxText, segKey, splitId, type Span } from './ast.ts';
+import { LIFECYCLES, type DiagramEdge, type DiagramModel, type DiagramNode, type Direction, type Lifecycle, type ParseIssue, type SourceRange, type TableField } from '../model.ts';
+import { boxText, segKey, span, splitId, valueRange, type Span } from './ast.ts';
 import { indexSource, type SourceIndex, type Stmt } from './source.ts';
 import { adrFoldersOf } from '../adr.ts';
 
@@ -59,6 +59,8 @@ export function buildModel(res: CompileResponse, text: string): Built {
 
   // Source locations: prefer a plain declaration, then an attribute, then an edge endpoint.
   const lineIndex: Record<number, string> = {};
+  const issues: ParseIssue[] = [];
+  const ownStatus = new Map<string, Lifecycle>(); // the last `vars: {status: …}` per element wins
   const located = new Map<string, number>(); // id -> priority of the range we stored
   const place = (id: string | undefined, span: Span, priority: number) => {
     if (!id || !nodes[id]) return;
@@ -74,12 +76,36 @@ export function buildModel(res: CompileResponse, text: string): Built {
       if (stmt.kind === 'attr' && stmt.attr![0].toLowerCase() === 'near' && !stmt.mk.value.map) {
         nodes[id].near = boxText(stmt.mk.value);
       }
+      if (stmt.kind === 'attr' && isStatusAttr(stmt.attr!) && !stmt.mk.value.map) {
+        const value = boxText(stmt.mk.value).trim().toLowerCase() as Lifecycle;
+        if (LIFECYCLES.includes(value)) ownStatus.set(id, value);
+        else {
+          issues.push({
+            severity: 'warning',
+            message: `Unknown status "${boxText(stmt.mk.value)}"; use ${LIFECYCLES.join(', ')}`,
+            range: toRange(span(valueRange(stmt.mk.value) ?? stmt.mk.range)),
+          });
+        }
+      }
       lineIndex[toRange(stmt.range).line] ??= id;
     } else if (stmt.kind === 'edge') {
       for (const e of stmt.edges!) {
         place(ids.get(segKey(e.src)), e.srcRange, 2);
         place(ids.get(segKey(e.dst)), e.dstRange, 2);
       }
+    }
+  }
+
+  // A status applies to everything inside the element, until a descendant sets its own.
+  // Shapes come out parents first, so a parent is resolved before its children.
+  for (const shape of res.diagram.shapes) {
+    const node = nodes[shape.id];
+    const own = ownStatus.get(node.id);
+    const parent = node.parent ? nodes[node.parent] : undefined;
+    if (own) node.status = own;
+    else if (parent?.status) {
+      node.status = parent.status;
+      node.statusFrom = parent.statusFrom ?? parent.id;
     }
   }
 
@@ -111,7 +137,7 @@ export function buildModel(res: CompileResponse, text: string): Built {
       nodes,
       roots,
       edges,
-      issues: [],
+      issues,
       valid: true,
       lineIndex,
     },
@@ -120,6 +146,11 @@ export function buildModel(res: CompileResponse, text: string): Built {
     ids,
     adrFolders: adrFoldersOf(res.graph.ast),
   };
+}
+
+// `vars: {status: …}` inside an element's block, or `x.vars: {status: …}`.
+function isStatusAttr(attr: string[]): boolean {
+  return attr.length === 2 && attr[0].toLowerCase() === 'vars' && attr[1].toLowerCase() === 'status';
 }
 
 function edgeOf(c: Connection, range: SourceRange): DiagramEdge {

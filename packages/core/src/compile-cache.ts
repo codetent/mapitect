@@ -57,7 +57,7 @@ export class CompileCache<D extends DiagramDocument = DiagramDocument> {
       const result = await this.compiler.compile(text, basename(doc.path), files);
       const previous = this.states.get(key);
       const state: DocState = result.ok
-        ? { version, ok: true, built: result.built, issues: [] }
+        ? { version, ok: true, built: result.built, issues: result.built.model.issues }
         : { version, ok: false, built: previous?.built, issues: result.issues };
       if (!previous || previous.version <= version) {
         this.states.set(key, state);

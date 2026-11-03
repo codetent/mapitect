@@ -2,14 +2,14 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, SourceRange, UiMessage } from '@mapitect/core';
+import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, Lifecycle, SourceRange, UiMessage } from '@mapitect/core';
 import type { HostBridge } from './bridge.ts';
 import { adrNumber, DecisionReader, statusLabel, statusPill } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
 import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer } from './render.ts';
 import { exportPng, exportSvg } from './export.ts';
-import { typeOf, plainLabel, type IconName } from './theme.ts';
+import { typeOf, plainLabel, statusName, STATUSES, type IconName } from './theme.ts';
 import { ancestry, buildView, collapseToLevel, depthOf, isWithin, type VEdge, type VisibleGraph } from './view.ts';
 
 // The whole diagram UI. It runs in any browser context; everything outside
@@ -22,6 +22,7 @@ interface PersistedState {
   transform?: { x: number; y: number; k: number };
   sidebar: boolean;
   minimap: boolean;
+  hidden?: Lifecycle[]; // statuses filtered out of the map
 }
 
 export function mount(app: HTMLElement, host: HostBridge): void {
@@ -54,8 +55,13 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         </div>
         <span class="sep"></span>
         <button class="icon-btn" data-action="direction" title="Layout direction (writes direction: … to the file)">${iconSvg('arrowRight', 16)}</button>
+        <span class="sep status-sep"></span>
+        <div class="menu-wrap status-wrap">
+          <button class="icon-btn" data-action="status-menu" title="Filter by status">${iconSvg('lifecycle', 16)}</button>
+          <div class="menu glass status-menu"></div>
+        </div>
         <span class="sep"></span>
-        <div class="menu-wrap">
+        <div class="menu-wrap export-wrap">
           <button class="icon-btn" data-action="export" title="Export">${iconSvg('download', 16)}</button>
           <div class="menu glass">
             <button data-export="svg">Export as SVG</button>
@@ -108,6 +114,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     cursor: null as string | null,
     sidebar: saved?.sidebar ?? false,
     minimap: saved?.minimap ?? false,
+    hidden: new Set<Lifecycle>(saved?.hidden ?? []),
     level: null as number | null,
     wheel: 'auto',
   };
@@ -149,6 +156,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       transform: { x: t.x, y: t.y, k: t.k },
       sidebar: view.sidebar,
       minimap: view.minimap,
+      hidden: [...view.hidden],
     });
   }
 
@@ -312,6 +320,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     renderTree();
     renderDetails();
     renderLevelButtons();
+    renderStatusMenu();
     applyHighlight();
     updateMinimapViewport(currentTransform());
     persist();
@@ -585,6 +594,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
             <span class="twisty${hasKids ? '' : ' leaf'}${open ? ' open' : ''}" data-twisty="${esc(id)}">${hasKids ? iconSvg('chevronRight', 12) : ''}</span>
             <span class="tree-icon">${iconSvg(t.icon, 14)}</span>
             <span class="tree-label">${highlightMatch(firstLine(n.label), q)}</span>
+            ${n.status && n.status !== 'live' && !n.statusFrom ? `<span class="status-dot st-${n.status}" title="${statusName(n.status)}"></span>` : ''}
           </div>`,
         );
         if (hasKids && open) {
@@ -686,6 +696,25 @@ export function mount(app: HTMLElement, host: HostBridge): void {
 
   let detailsFor: string | null = null;
 
+  // The status buttons show the effective status; an inherited one is named with where it comes from.
+  function statusField(n: DiagramNode, dis: string): string {
+    const current = n.status ?? 'live';
+    const from = n.statusFrom && model!.nodes[n.statusFrom];
+    const note = from ? `<span class="field-hint">from <button class="link" data-reveal="${esc(from.id)}">${esc(firstLine(from.label))}</button></span>` : '';
+    return `<div class="field"><span class="field-label">Status${note}</span><div class="status-grid">
+      ${STATUSES.map((s) => `<button data-status="${s.id}" class="st-${s.id}${current === s.id ? ' active' : ''}" ${dis}><span class="status-dot st-${s.id}"></span>${s.name}</button>`).join('')}
+    </div></div>`;
+  }
+
+  // Picking what the element would inherit anyway removes its own status.
+  function setStatus(id: string, status: Lifecycle): void {
+    const n = model?.nodes[id];
+    if (!n) return;
+    const parent = n.parent ? model!.nodes[n.parent] : undefined;
+    const inherited = parent?.status ?? 'live';
+    sendEdit({ op: 'setStatus', id, value: status === inherited ? null : status });
+  }
+
   function renderDetails(): void {
     const id = view.selected;
     // Don't rebuild the form under the cursor while the user is typing in it.
@@ -759,6 +788,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       <label class="field"><span class="field-label">Description</span>
         <textarea data-field="tooltip" rows="2" placeholder="What is it responsible for?" ${dis}>${esc(n.tooltip ?? '')}</textarea></label>
       ${n.fields?.length ? '' : `<div class="field"><span class="field-label">Type</span><div class="shape-grid">${SHAPES.map(([shape, name, icon]) => `<button data-shape="${shape}" title="${name}" class="${n.shape === shape ? 'active' : ''}" ${dis}>${iconSvg(icon, 16)}</button>`).join('')}</div></div>`}
+      ${statusField(n, dis)}
       <div class="field"><span class="field-label">Color</span><div class="swatches">
         <button data-fill="" title="Default" class="${fill ? '' : 'active'}" ${dis}>${iconSvg('none', 14)}</button>
         ${FILLS.map((c) => `<button data-fill="${c}" title="${c}" style="--sw:${c}" class="${fill === c ? 'active' : ''}" ${dis}></button>`).join('')}
@@ -793,6 +823,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       return sendEdit({ op: 'setAttr', id: sel, attr: ['shape'], value: shape === 'rectangle' ? null : shape });
     }
     if (el.dataset.fill !== undefined) return sendEdit({ op: 'setAttr', id: sel, attr: ['style', 'fill'], value: el.dataset.fill || null });
+    if (el.dataset.status) return setStatus(sel, el.dataset.status as Lifecycle);
     switch (el.dataset.action) {
       case 'close-details':
         return setSelected(null);
@@ -889,6 +920,28 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     app.classList.toggle('no-minimap', !view.minimap);
   }
 
+  // Only diagrams that use statuses get the filter; a hidden status stays listed so it can come back.
+  function renderStatusMenu(): void {
+    if (!model) return;
+    const counts = new Map<Lifecycle, number>();
+    for (const n of Object.values(model.nodes)) counts.set(n.status ?? 'live', (counts.get(n.status ?? 'live') ?? 0) + 1);
+    const used = [...counts.keys()].some((s) => s !== 'live') || view.hidden.size > 0;
+    app.classList.toggle('has-status', used);
+    $('[data-action="status-menu"]').classList.toggle('active', view.hidden.size > 0);
+    $('.status-menu').innerHTML = `<div class="menu-title">Show elements that are</div>
+      ${STATUSES.map(
+        (s) => `<button data-status-toggle="${s.id}" class="${view.hidden.has(s.id) ? '' : 'on'}">
+          <span class="check">${iconSvg('check', 12)}</span><span class="status-dot st-${s.id}"></span>${s.name}<span class="count">${counts.get(s.id) ?? 0}</span>
+        </button>`,
+      ).join('')}`;
+  }
+
+  function toggleStatus(status: Lifecycle): void {
+    if (view.hidden.has(status)) view.hidden.delete(status);
+    else view.hidden.add(status);
+    void refresh({ animate: true });
+  }
+
   // The level whose collapse state is showing; the last one picked wins ties.
   function activeLevel(): number | null {
     if (!model) return null;
@@ -909,11 +962,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   }
 
   app.addEventListener('click', (ev) => {
-    const el = (ev.target as Element).closest<HTMLElement>('[data-action], [data-level], [data-export]');
+    const el = (ev.target as Element).closest<HTMLElement>('[data-action], [data-level], [data-export], [data-status-toggle]');
     if (!el || detailsEl.contains(el)) return;
     if (el.dataset.level !== undefined) return setLevel(Number(el.dataset.level));
+    if (el.dataset.statusToggle) return toggleStatus(el.dataset.statusToggle as Lifecycle);
     if (el.dataset.export) {
-      $('.menu-wrap').classList.remove('open');
+      $('.export-wrap').classList.remove('open');
       return void doExport(el.dataset.export as 'svg' | 'png');
     }
     switch (el.dataset.action) {
@@ -932,7 +986,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         return sendEdit({ op: 'setDirection', value: order[(order.indexOf(cur) + 1) % 4] });
       }
       case 'export':
-        $('.menu-wrap').classList.toggle('open');
+        $('.status-wrap').classList.remove('open');
+        $('.export-wrap').classList.toggle('open');
+        return;
+      case 'status-menu':
+        $('.export-wrap').classList.remove('open');
+        $('.status-wrap').classList.toggle('open');
         return;
       case 'zoom-in':
         return zoomBy(1.4);
@@ -952,7 +1011,8 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   });
 
   document.addEventListener('pointerdown', (ev) => {
-    if (!(ev.target as Element).closest('.menu-wrap')) $('.menu-wrap').classList.remove('open');
+    const inside = (ev.target as Element).closest('.menu-wrap');
+    app.querySelectorAll('.menu-wrap.open').forEach((m) => m !== inside && m.classList.remove('open'));
   });
 
   svg.addEventListener('click', () => {

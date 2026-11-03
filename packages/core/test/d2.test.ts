@@ -122,6 +122,58 @@ test('setDirection rewrites or adds the root direction', async () => {
   assert.throws(() => planEdit('a\n', built, { op: 'setDirection', value: 'sideways' as never }), EditError);
 });
 
+test('status comes from the element\'s vars and applies to everything inside it', async () => {
+  const { model } = await build(
+    [
+      'vars: {status: removed}',
+      'shop: {',
+      '  vars: {status: deprecated; owner: team-a}',
+      '  web: {vars: {status: future}}',
+      '  api',
+      '  api.db',
+      '  cache: {vars: {status: live}}',
+      '}',
+      'stripe.vars: {status: Future}',
+      'mail: {vars: {status: maybe}}',
+      'other',
+    ].join('\n'),
+  );
+  const status = (id: string) => [model.nodes[id].status, model.nodes[id].statusFrom];
+  assert.deepEqual(status('shop'), ['deprecated', undefined]);
+  assert.deepEqual(status('shop.web'), ['future', undefined], 'a child overrides');
+  assert.deepEqual(status('shop.api'), ['deprecated', 'shop']);
+  assert.deepEqual(status('shop.api.db'), ['deprecated', 'shop'], 'inherited from the element that sets it');
+  assert.deepEqual(status('shop.cache'), ['live', undefined]);
+  assert.deepEqual(status('stripe'), ['future', undefined], 'case-insensitive, also as x.vars');
+  assert.deepEqual(status('other'), [undefined, undefined], 'board-level vars are not a status');
+  assert.deepEqual(status('mail'), [undefined, undefined]);
+  assert.equal(model.issues.length, 1);
+  assert.equal(model.issues[0].severity, 'warning');
+  assert.match(model.issues[0].message, /Unknown status "maybe"/);
+  assert.equal(model.issues[0].range.line, 9);
+});
+
+test('setStatus writes vars: {status: …} and removes it again', async () => {
+  let r = await edit('a: A {\n  shape: cloud\n}\n', { op: 'setStatus', id: 'a', value: 'future' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: future}\n}\n');
+  assert.equal(r.model.nodes.a.status, 'future');
+  r = await edit(r.text, { op: 'setStatus', id: 'a', value: 'removed' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: removed}\n}\n');
+  r = await edit(r.text, { op: 'setStatus', id: 'a', value: null });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n}\n', 'a vars block holding only the status goes too');
+  r = await edit('a: {\n  vars: {\n    owner: x\n  }\n}\n', { op: 'setStatus', id: 'a', value: 'deprecated' });
+  assert.equal(r.text, 'a: {\n  vars: {\n    owner: x\n    status: deprecated\n  }\n}\n', 'joins an existing vars block');
+  r = await edit(r.text, { op: 'setStatus', id: 'a', value: null });
+  assert.equal(r.text, 'a: {\n  vars: {\n    owner: x\n  }\n}\n', 'other vars stay');
+  r = await edit('db: Database\n', { op: 'setStatus', id: 'db', value: 'live' });
+  assert.equal(r.text, 'db: Database\ndb.vars: {status: live}\n');
+  assert.equal(r.model.nodes.db.status, 'live');
+  r = await edit(r.text, { op: 'setStatus', id: 'db', value: null });
+  assert.equal(r.text, 'db: Database\n');
+  const built = await build('a\n');
+  assert.throws(() => planEdit('a\n', built, { op: 'setStatus', id: 'a', value: 'beta' as never }), EditError);
+});
+
 test('structural edits are refused: the D2 source owns elements and connections', async () => {
   const text = 'a -> b\nt: {shape: sql_table; id: int}\n';
   const built = await build(text);

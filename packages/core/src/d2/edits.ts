@@ -6,7 +6,7 @@
 // Only texts and appearance can be edited visually. Elements and connections
 // are added, removed and rewired in the D2 source itself.
 
-import type { EditOp, TextEdit } from '../model.ts';
+import { LIFECYCLES, type EditOp, type Lifecycle, type TextEdit } from '../model.ts';
 import { formatKey, formatKeySeg, formatValue, segKey, span, splitId, valueRange, type Span } from './ast.ts';
 import type { Built } from './convert.ts';
 import { labelSpan, sameSegs, type Stmt } from './source.ts';
@@ -46,6 +46,8 @@ class Planner {
         return this.setAttr(this.segs(op.id), op.attr, op.value);
       case 'setEdgeLabel':
         return this.setEdgeLabel(op.id, op.label);
+      case 'setStatus':
+        return this.setStatus(this.segs(op.id), op.value);
       case 'setDirection':
         return this.setDirection(op.value);
       default:
@@ -130,18 +132,40 @@ class Planner {
     const formatted = formatValue(value);
     const last = existing[existing.length - 1];
     if (last) return [this.replace(span(valueRange(last.mk.value)!), formatted)];
+    return [this.addToNode(segs, `${attr.join('.')}: ${formatted}`)];
+  }
 
-    const line = `${attr.join('.')}: ${formatted}`;
+  // Add `line` (an attribute without the node key) to a node: in its last block, or as `key.line`.
+  private addToNode(segs: string[], line: string): TextEdit {
     const blocks = this.built.index.blocks.get(segKey(segs));
-    if (blocks?.length) return [this.insertInBlock(blocks[blocks.length - 1], line)];
+    if (blocks?.length) return this.insertInBlock(blocks[blocks.length - 1], line);
 
     // No block: add a sibling statement right after the declaration.
     const decl = this.declarations(segs).pop();
     if (decl?.mk.key) {
       const keyText = this.text.slice(span(decl.mk.key.range).start, span(decl.mk.key.range).end);
-      return [this.insert(decl.range.end, `\n${this.indentOf(decl.range.start)}${keyText}.${line}`)];
+      return this.insert(decl.range.end, `\n${this.indentOf(decl.range.start)}${keyText}.${line}`);
     }
-    return [this.append(segs.slice(0, -1), `${formatKeySeg(segs[segs.length - 1])}.${line}`)];
+    return this.append(segs.slice(0, -1), `${formatKeySeg(segs[segs.length - 1])}.${line}`);
+  }
+
+  // The element's own `vars: {status: …}`. D2 only accepts `vars` as the last part of a key,
+  // so a new status goes into an existing `vars` block or a new `vars: {status: …}`.
+  private setStatus(segs: string[], value: Lifecycle | null): TextEdit[] {
+    if (value !== null && !LIFECYCLES.includes(value)) throw new EditError(`"${value}" is not a status`);
+    const existing = this.attrStmts(segs, ['vars', 'status']);
+    if (value === null) {
+      // Take the whole `vars` block along when the status is all it holds.
+      const alone = (s: Stmt) => s.parent?.kind === 'attr' && s.parent.mk.value.map?.nodes?.filter((n) => n.map_key).length === 1;
+      return this.removeAll(existing.map((s) => (alone(s) ? s.parent! : s)));
+    }
+    const last = existing[existing.length - 1];
+    if (last) return [this.replace(span(valueRange(last.mk.value)!), value)];
+    const vars = this.built.index.stmts.filter(
+      (s) => s.kind === 'attr' && sameSegs(s.node!, segs) && s.attr!.length === 1 && s.attr![0].toLowerCase() === 'vars' && s.mk.value.map,
+    );
+    if (vars.length) return [this.insertInBlock(vars[vars.length - 1], `status: ${value}`)];
+    return [this.addToNode(segs, `vars: {status: ${value}}`)];
   }
 
   private checkShapeChange(segs: string[], shape: string): void {

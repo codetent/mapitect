@@ -11,6 +11,7 @@ import {
   type HostMessage,
   type HostShell,
   type PreviewConfig,
+  type Severity,
   type SourceRange,
   type TextEdit,
   type UiMessage,
@@ -45,7 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnostics.set(
       doc.text.uri,
       state.issues.map((issue) => {
-        const d = new vscode.Diagnostic(toRange(issue.range), issue.message, vscode.DiagnosticSeverity.Error);
+        const d = new vscode.Diagnostic(toRange(issue.range), issue.message, SEVERITY[issue.severity]);
         d.source = 'd2';
         return d;
       }),
@@ -145,6 +146,12 @@ function toPath(uri: vscode.Uri): string {
 function toUri(file: string): vscode.Uri {
   return vscode.Uri.file(file);
 }
+
+const SEVERITY: Record<Severity, vscode.DiagnosticSeverity> = {
+  error: vscode.DiagnosticSeverity.Error,
+  warning: vscode.DiagnosticSeverity.Warning,
+  info: vscode.DiagnosticSeverity.Information,
+};
 
 function toRange(r: SourceRange): vscode.Range {
   return new vscode.Range(r.line, r.col, r.endLine, Math.max(r.endCol, r.line === r.endLine ? r.col + 1 : r.endCol));

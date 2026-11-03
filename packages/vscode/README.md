@@ -45,12 +45,43 @@ The preview lets you change text and the look of elements. The structure stays i
 Here is what you can edit:
 
 - Rename an element, a group title or a connection label by double-clicking it or pressing `F2`.
-- In the details panel, edit an element's name, description (`tooltip`) and link, choose its type (service, actor, gateway, data store, queue or cloud service) or set a fill color. For a connection you can edit the label. Other D2 shapes are displayed correctly, but you set them in code.
+- In the details panel, edit an element's name, description (`tooltip`), link and [lifecycle status](#lifecycle-status), choose its type (service, actor, gateway, data store, queue or cloud service) or set a fill color. For a connection you can edit the label. Other D2 shapes are displayed correctly, but you set them in code.
 - Right-click an element or connection for *Rename* or *Edit label*, *Go to source* and navigation commands.
 - The arrow button in the toolbar cycles the layout direction through right, down, left and up, and stores it as `direction:` in the file.
 - `⌘Z` and `⇧⌘Z` undo and redo edits made in the preview. If you have typed in the file since, use the editor's own undo instead.
 
 Editing is paused while the file has compile errors, because the source positions might be out of date. The layout is always automatic, so elements can't be moved by hand.
+
+## Lifecycle status
+
+Architectures change, and a map should show what is planned and what is on its way out. Give an element a status in its `vars`:
+
+```d2
+shop: Bookshop {
+  recommendations: Recommendations {
+    vars: {status: future}
+  }
+  export: Sales report job {
+    vars: {status: deprecated}
+  }
+}
+legacy-search.vars: {status: removed}
+```
+
+There are four statuses:
+
+| Status | Meaning | Drawn as |
+| --- | --- | --- |
+| `live` | Running today. This is the default. | normal |
+| `future` | Planned or being built | dashed border, connections to it dashed |
+| `deprecated` | Still running, but on its way out | amber border |
+| `removed` | Gone or being taken out | faded and struck through, connections to it faded |
+
+A status applies to the element and everything inside it, so marking a system `future` marks all of its parts. A child can set a status of its own, including `live`. Cards and group headers show their own status next to the type, and the details panel names the element a status is inherited from. A status in the file's top-level `vars` doesn't count, and an unknown value is reported as a warning.
+
+In the details panel, the *Status* buttons set the status. Picking the status an element would inherit anyway removes its own `status`, together with its `vars` block if nothing else is in it.
+
+Once a diagram uses statuses, the toolbar gets a status filter. Uncheck statuses to hide their elements: hide *Removed* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
 
 ## Architecture decisions
 

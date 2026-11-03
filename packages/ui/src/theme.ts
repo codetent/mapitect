@@ -1,4 +1,4 @@
-import type { DiagramNode } from '@mapitect/core';
+import type { DiagramNode, Lifecycle } from '@mapitect/core';
 
 export interface TypeInfo {
   name: string;
@@ -56,6 +56,8 @@ export const ICONS = {
   link: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
   none: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 18.4L18.4 5.6',
   bidirectional: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
+  lifecycle: 'M4 22V4M4 4h13l-2.5 4L17 12H4',
+  check: 'M20 6L9 17l-5-5',
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -85,6 +87,18 @@ const TYPES: Record<string, TypeInfo> = {
   callout: { name: 'Note', icon: 'callout', accent: '#eab308' },
   parallelogram: { name: 'Input / output', icon: 'parallelogram', accent: '#6366f1' },
 };
+
+// Lifecycle statuses in menu order; elements without one count as live.
+export const STATUSES: { id: Lifecycle; name: string }[] = [
+  { id: 'live', name: 'Live' },
+  { id: 'future', name: 'Future' },
+  { id: 'deprecated', name: 'Deprecated' },
+  { id: 'removed', name: 'Removed' },
+];
+
+export function statusName(status: Lifecycle): string {
+  return STATUSES.find((s) => s.id === status)?.name ?? status;
+}
 
 export function typeOf(node: DiagramNode, depth: number, hasChildren: boolean): TypeInfo {
   const base = TYPES[node.shape] ?? TYPES.rectangle;

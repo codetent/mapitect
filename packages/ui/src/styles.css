@@ -566,6 +566,11 @@ kbd {
   display: flex;
 }
 
+/* An open menu drops over the details panel below the toolbar. */
+.toolbar:has(.menu-wrap.open) {
+  z-index: 6;
+}
+
 .menu button {
   text-align: left;
   padding: 7px 10px;
@@ -2024,4 +2029,205 @@ body.theme-light .adr-reader {
 .markdown th {
   background: var(--hover);
   font-weight: 600;
+}
+
+/* ======================================================= lifecycle status */
+
+body {
+  --st-live: #22c55e;
+  --st-future: #38bdf8;
+  --st-deprecated: #f59e0b;
+  --st-removed: #f87171;
+}
+
+body.theme-light {
+  --st-live: #16a34a;
+  --st-future: #0284c7;
+  --st-deprecated: #d97706;
+  --st-removed: #dc2626;
+}
+
+.st-live,
+[data-status='live'] {
+  --st: var(--st-live);
+}
+
+.st-future,
+[data-status='future'] {
+  --st: var(--st-future);
+}
+
+.st-deprecated,
+[data-status='deprecated'] {
+  --st: var(--st-deprecated);
+}
+
+.st-removed,
+[data-status='removed'] {
+  --st: var(--st-removed);
+}
+
+.status-label {
+  fill: var(--st);
+}
+
+/* :where() keeps these below hover, selection and dimming. */
+
+:where(.node[data-status='future']) .card {
+  stroke: color-mix(in srgb, var(--st) 75%, transparent);
+  stroke-dasharray: 6 4;
+  fill: color-mix(in srgb, var(--card) 72%, transparent);
+}
+
+:where(.node[data-status='deprecated']) .card {
+  stroke: color-mix(in srgb, var(--st) 75%, transparent);
+}
+
+:where(.node[data-status='removed']) > :not(.stack) {
+  opacity: 0.5;
+}
+
+:where(.node[data-status='removed']) > .stack {
+  opacity: 0.2;
+}
+
+:where(.node[data-status='removed']) .title,
+:where(.group[data-status='removed']) .group-title {
+  text-decoration: line-through;
+}
+
+:where(.group[data-status='future']) > .group-bg {
+  stroke: color-mix(in srgb, var(--st) 60%, transparent);
+  stroke-dasharray: 8 5;
+}
+
+:where(.group[data-status='deprecated']) > .group-bg {
+  stroke: color-mix(in srgb, var(--st) 60%, transparent);
+}
+
+:where(.group[data-status='removed']) > .group-bg {
+  stroke-dasharray: 8 5;
+}
+
+:where(.group[data-status='removed']) .group-header {
+  opacity: 0.6;
+}
+
+:where(.edge[data-status='future']) .edge-line {
+  stroke-dasharray: 6 5;
+}
+
+:where(.edge[data-status='removed']) > * {
+  opacity: 0.35;
+}
+
+.status-dot {
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--st, var(--faint));
+}
+
+.tree-row .status-dot {
+  margin-left: auto;
+}
+
+.status-wrap,
+.status-sep {
+  display: none;
+}
+
+.has-status .status-wrap {
+  display: block;
+}
+
+.has-status .status-sep {
+  display: inline-block;
+}
+
+.status-menu {
+  min-width: 200px;
+}
+
+.menu-title {
+  padding: 6px 10px 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.status-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-menu .check {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  color: transparent;
+}
+
+.status-menu button.on .check {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.status-menu button:not(.on) {
+  color: var(--muted);
+}
+
+.status-menu .count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.field-hint {
+  margin-left: 6px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.status-grid button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.status-grid button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.status-grid button.active {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--st) 14%, transparent);
+  border-color: color-mix(in srgb, var(--st) 55%, transparent);
 }

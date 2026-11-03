@@ -1,8 +1,9 @@
 import { select, type Selection } from 'd3-selection';
 import 'd3-transition';
 import { easeCubicInOut } from 'd3-ease';
+import type { DiagramNode, Lifecycle } from '@mapitect/core';
 import { CARD, TABLE, type Point, type Scene, type SEdge, type SNode } from './layout.ts';
-import { ICONS, isColor, isDark, measure, type IconName } from './theme.ts';
+import { ICONS, isColor, isDark, measure, statusName, type IconName } from './theme.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sel = Selection<any, any, any, any>;
@@ -90,6 +91,7 @@ export class Renderer {
     const groupsAll = groupsEnter.merge(groups);
     groupsAll.each((d, i, els) => this.drawGroup(select(els[i]), d));
     groupsAll
+      .attr('data-status', (d) => d.v.node.status ?? null)
       .classed('frame', (d) => d.v.frame)
       .classed('context', (d) => d.v.context)
       .transition(t as never)
@@ -128,6 +130,7 @@ export class Renderer {
     nodesAll.each((d, i, els) => this.drawNode(select(els[i]), d));
     nodesAll
       .attr('class', (d) => `node kind-${d.v.kind}`)
+      .attr('data-status', (d) => d.v.node.status ?? null)
       .classed('context', (d) => d.v.context)
       .classed('collapsed', (d) => d.v.collapsed)
       .transition(t as never)
@@ -177,6 +180,7 @@ export class Renderer {
     edgesAll
       .classed('implied', (d) => d.v.implied)
       .classed('animated', (d) => d.v.style.animated === 'true')
+      .attr('data-status', (d) => edgeStatus(scene, d))
       .each((d, i, els) => {
         const g = select(els[i]);
         const geom = this.edgeGeometry(d);
@@ -314,7 +318,9 @@ export class Renderer {
     const adrs = this.adrCounts.get(v.id) ?? 0;
     const decisions = adrs ? ` · ${adrs} ADR${adrs === 1 ? '' : 's'}` : '';
     const meta = `${v.type.name}${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}${decisions}`;
-    header.select('text.group-meta').text(meta.toUpperCase());
+    const metaText = header.select('text.group-meta').text(meta.toUpperCase());
+    const status = ownStatus(v.node);
+    if (status) metaText.append('tspan').attr('class', 'status-label').text(` · ${statusName(status).toUpperCase()}`);
 
     const toggle = g.select('g.btn-toggle').style('display', nullable(v.frame ? 'none' : null));
     button(toggle, 'collapse', 'Collapse', () => this.on.toggle(v.id));
@@ -382,7 +388,16 @@ export class Renderer {
     const tx = CARD.pad + CARD.icon + CARD.gap;
     const headerH = Math.max(CARD.icon, 16 + c.title.length * CARD.titleLine);
     const top = CARD.pad + (headerH - (16 + c.title.length * CARD.titleLine)) / 2;
-    g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9).text(c.typeLabel.toUpperCase());
+    const typeLabel = g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9);
+    const status = ownStatus(v.node);
+    if (status) {
+      // The status matters more than the type; drop the type when both don't fit next to the badges.
+      const name = statusName(status).toUpperCase();
+      const room = d.w - tx - 16 - (this.adrCounts.get(v.id) ? 48 : 0) - (v.node.link ? 22 : 0);
+      const both = measure(`${c.typeLabel} · ${name}`, CARD.typeSize, 650) * 1.1 <= room;
+      if (both) typeLabel.append('tspan').text(`${c.typeLabel.toUpperCase()} · `);
+      typeLabel.append('tspan').attr('class', 'status-label').text(name);
+    } else typeLabel.text(c.typeLabel.toUpperCase());
     const title = g
       .append('text')
       .attr('class', 'title')
@@ -501,6 +516,19 @@ export class Renderer {
 }
 
 // ---------------------------------------------------------------- helpers
+
+// A status set on the element itself; inherited ones are already on the container.
+function ownStatus(node: DiagramNode): Lifecycle | null {
+  return node.status && node.status !== 'live' && !node.statusFrom ? node.status : null;
+}
+
+// A connection to something removed is going away; one to something planned is planned too.
+function edgeStatus(scene: Scene, e: SEdge): Lifecycle | null {
+  const ends = [e.v.source, e.v.target].map((id) => scene.byId.get(id)?.v.node.status);
+  if (ends.includes('removed')) return 'removed';
+  if (ends.includes('future')) return 'future';
+  return null;
+}
 
 function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile: number, size: number): void {
   const off = (tile - size) / 2;

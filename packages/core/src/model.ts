@@ -3,6 +3,10 @@
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
+// Where an element is in its lifecycle, from `vars: {status: …}` on the element.
+export type Lifecycle = 'live' | 'future' | 'deprecated' | 'removed';
+export const LIFECYCLES: Lifecycle[] = ['live', 'future', 'deprecated', 'removed'];
+
 export interface SourceRange {
   line: number; // 0-based
   col: number; // 0-based
@@ -32,6 +36,8 @@ export interface DiagramNode {
   direction?: Direction;
   classes: string[];
   fields?: TableField[]; // sql_table / class shapes
+  status?: Lifecycle; // set on the element or inherited from an ancestor
+  statusFrom?: string; // the ancestor it is inherited from
   range: SourceRange;
 }
 
@@ -62,6 +68,7 @@ export type EditOp =
   | { op: 'setLabel'; id: string; label: string }
   | { op: 'setAttr'; id: string; attr: string[]; value: string | null } // tooltip, link, shape, icon, style.*
   | { op: 'setEdgeLabel'; id: string; label: string }
+  | { op: 'setStatus'; id: string; value: Lifecycle | null } // `vars: {status: …}`; null inherits
   | { op: 'setDirection'; value: Direction }; // the board's layout direction
 
 export interface TextEdit {

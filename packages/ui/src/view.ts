@@ -3,12 +3,13 @@
 // are hidden are "lifted" to the nearest visible ancestor (implied
 // connections) and aggregated.
 
-import type { DiagramEdge, DiagramModel, DiagramNode } from '@mapitect/core';
+import type { DiagramEdge, DiagramModel, DiagramNode, Lifecycle } from '@mapitect/core';
 import { typeOf, type TypeInfo } from './theme.ts';
 
 export interface ViewState {
   focus: string | null;
   collapsed: Set<string>;
+  hidden?: Set<Lifecycle>; // statuses filtered out; elements without one count as live
 }
 
 export interface VNode {
@@ -77,8 +78,26 @@ export function isWithin(model: DiagramModel, id: string, ancestor: string): boo
   return false;
 }
 
+// Whether the status filter keeps an element: its own status is shown, or a
+// descendant's is, so the container stays as structure around it.
+function statusFilter(model: DiagramModel, hidden: Set<Lifecycle> | undefined): (id: string) => boolean {
+  if (!hidden?.size) return () => true;
+  const memo = new Map<string, boolean>();
+  const keep = (id: string): boolean => {
+    let k = memo.get(id);
+    if (k === undefined) {
+      const node = model.nodes[id];
+      k = !!node && (!hidden.has(node.status ?? 'live') || node.children.some(keep));
+      memo.set(id, k);
+    }
+    return k;
+  };
+  return keep;
+}
+
 export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
-  const focus = state.focus && model.nodes[state.focus]?.children.length ? state.focus : null;
+  const keep = statusFilter(model, state.hidden);
+  const focus = state.focus && model.nodes[state.focus]?.children.length && keep(state.focus) ? state.focus : null;
   const nodes = new Map<string, VNode>();
   const touched = new Set<string>();
   for (const e of model.edges) {
@@ -111,7 +130,7 @@ export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
       type: typeOf(node, depth, hasChildren),
     };
     nodes.set(id, v);
-    if (kind === 'group') v.children = node.children.map((c) => build(c, false, context));
+    if (kind === 'group') v.children = node.children.filter(keep).map((c) => build(c, false, context));
     return v;
   };
 
@@ -119,7 +138,7 @@ export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
   if (focus) {
     roots.push(build(focus, true, false));
   } else {
-    for (const id of model.roots) {
+    for (const id of model.roots.filter(keep)) {
       const n = model.nodes[id];
       if (n.near && NEAR_CONSTANT.test(n.near) && !touched.has(id) && !n.children.length) {
         annotations.push(n);
@@ -133,7 +152,7 @@ export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
 
   // Map any model node to the visible node that stands in for it.
   const rep = (id: string): string | null => {
-    if (!model.nodes[id]) return null;
+    if (!model.nodes[id] || !keep(id)) return null;
     const path = ancestry(model, id);
     if (focus && !isWithin(model, id, focus)) {
       let k = 0;

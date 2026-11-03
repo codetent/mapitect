@@ -54,8 +54,9 @@ shop: Bookshop {
     }
 
     recommendations: Recommendations {
-      class: planned
-      tooltip: "Planned: \"readers also bought\" suggestions."
+      tooltip: "\"Readers also bought\" suggestions."
+      # Lifecycle status: live (the default), future, deprecated or removed.
+      vars: {status: future}
     }
 
     orders: Order Service {
@@ -80,7 +81,8 @@ shop: Bookshop {
     }
 
     export: Sales report job {
-      tooltip: Builds yesterday's sales report every night.
+      tooltip: Builds yesterday's sales report every night. Moves to the data warehouse.
+      vars: {status: deprecated}
     }
 
     orders.api -> payments: charge {
@@ -97,6 +99,12 @@ shop: Bookshop {
 
     replica: Read replica {
       shape: cylinder
+    }
+
+    search: Elasticsearch {
+      shape: cylinder
+      tooltip: Replaced by PostgreSQL full-text search.
+      vars: {status: removed}
     }
 
     bus: Order events {
@@ -117,6 +125,7 @@ shop: Bookshop {
     style.stroke-width: 3
   }
   backend.catalog -> data.db: reads
+  backend.catalog -> data.search: queries
   backend.recommendations -> data.replica: reads
   backend.orders.api -> data.db: writes {
     target-arrowhead: {
