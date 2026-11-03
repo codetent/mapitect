@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "bootstrap-sha": "14ad5ade030bb19706b42d1966c08f8c8cd2023d",
+  "packages": {
+    ".": {
+      "package-name": "mapitect",
+      "changelog-path": "packages/vscode/CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/vscode/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$.packages['packages/vscode'].version"
+        }
+      ]
+    }
+  }
+}
