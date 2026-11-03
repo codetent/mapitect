@@ -2,7 +2,7 @@
   "name": "mapitect",
   "displayName": "mapitect: Interactive D2 Architecture Maps",
   "description": "Explore D2 diagrams as interactive architecture maps. Drill into systems, edit names and descriptions in the preview, and read the decision records behind each component.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "codetent",
   "license": "MIT",
   "repository": {
