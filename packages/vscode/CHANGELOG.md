@@ -8,6 +8,5 @@ First release.
 - Details panel, selection highlighting and two-way sync between the diagram and its source.
 - Editing in the diagram: rename elements and connections, edit descriptions and links, pick element types and fill colors, change the layout direction, with undo and redo.
 - Architecture decision records (MADR) shown next to their elements, with a decision reader and *New decision…*.
-- Lifecycle status per element (live, future, deprecated, removed) from `vars: {status: …}`, with its own styling, a status filter and a status picker in the details panel.
 - Export as SVG or PNG.
 - D2 syntax highlighting, bracket matching, folding and compiler diagnostics.
