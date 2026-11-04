@@ -65,23 +65,21 @@ shop: Bookshop {
     vars: {status: deprecated}
   }
 }
-legacy-search.vars: {status: removed}
 ```
 
-There are four statuses:
+There are three statuses:
 
 | Status | Meaning | Drawn as |
 | --- | --- | --- |
 | `live` | Running today. This is the default. | normal |
-| `future` | Planned or being built | dashed border, connections to it dashed |
-| `deprecated` | Still running, but on its way out | amber border |
-| `removed` | Gone or being taken out | faded and struck through, connections to it faded |
+| `future` | Planned or being built | blue clock badge, connections to it dashed |
+| `deprecated` | Still running, but on its way out | amber warning badge |
 
-A status applies to the element and everything inside it, so marking a system `future` marks all of its parts. A child can set a status of its own, including `live`. Cards and group headers show their own status next to the type, and the details panel names the element a status is inherited from. A status in the file's top-level `vars` doesn't count, and an unknown value is reported as a warning.
+A status applies to the element and everything inside it, so marking a system `future` marks all of its parts. A child can set a status of its own, including `live`. The badge sits on the top-right corner of the element that sets the status, the same on cards, groups and tables, and hovering it explains what it means. The details panel names the element a status is inherited from. A status in the file's top-level `vars` doesn't count, and an unknown value is reported as a warning.
 
 In the details panel, the *Status* buttons set the status. Picking the status an element would inherit anyway removes its own `status`, together with its `vars` block if nothing else is in it.
 
-Once a diagram uses statuses, the toolbar gets a status filter. Uncheck statuses to hide their elements: hide *Removed* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
+Once a diagram uses statuses, the toolbar gets a status filter. Uncheck statuses to hide their elements: hide *Deprecated* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
 
 ## Architecture decisions
 

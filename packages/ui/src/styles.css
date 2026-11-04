@@ -2037,14 +2037,12 @@ body {
   --st-live: #22c55e;
   --st-future: #38bdf8;
   --st-deprecated: #f59e0b;
-  --st-removed: #f87171;
 }
 
 body.theme-light {
   --st-live: #16a34a;
   --st-future: #0284c7;
   --st-deprecated: #d97706;
-  --st-removed: #dc2626;
 }
 
 .st-live,
@@ -2062,63 +2060,66 @@ body.theme-light {
   --st: var(--st-deprecated);
 }
 
-.st-removed,
-[data-status='removed'] {
-  --st: var(--st-removed);
+/* The ring is the canvas, so the badge reads as pinned on top of the corner. */
+.status-badge circle {
+  fill: var(--st);
+  stroke: var(--canvas);
+  stroke-width: 2;
 }
 
-.status-label {
-  fill: var(--st);
+.status-badge path {
+  fill: none;
+  stroke: var(--canvas);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Above the badge it belongs to; positioned from script. */
+.status-tip {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: max-content; /* not squeezed by the space right of the anchor */
+  max-width: 260px;
+  padding: 8px 12px 8px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  font: 400 12px var(--font);
+  color: var(--muted);
+  transform: translate(-50%, calc(-100% + 4px));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.status-tip.open {
+  opacity: 1;
+  transform: translate(-50%, -100%);
+}
+
+.status-tip svg {
+  flex: none;
+}
+
+.status-tip strong {
+  display: block;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.status-badge {
+  cursor: help;
 }
 
 /* :where() keeps these below hover, selection and dimming. */
 
-:where(.node[data-status='future']) .card {
-  stroke: color-mix(in srgb, var(--st) 75%, transparent);
-  stroke-dasharray: 6 4;
-  fill: color-mix(in srgb, var(--card) 72%, transparent);
-}
-
-:where(.node[data-status='deprecated']) .card {
-  stroke: color-mix(in srgb, var(--st) 75%, transparent);
-}
-
-:where(.node[data-status='removed']) > :not(.stack) {
-  opacity: 0.5;
-}
-
-:where(.node[data-status='removed']) > .stack {
-  opacity: 0.2;
-}
-
-:where(.node[data-status='removed']) .title,
-:where(.group[data-status='removed']) .group-title {
-  text-decoration: line-through;
-}
-
-:where(.group[data-status='future']) > .group-bg {
-  stroke: color-mix(in srgb, var(--st) 60%, transparent);
-  stroke-dasharray: 8 5;
-}
-
-:where(.group[data-status='deprecated']) > .group-bg {
-  stroke: color-mix(in srgb, var(--st) 60%, transparent);
-}
-
-:where(.group[data-status='removed']) > .group-bg {
-  stroke-dasharray: 8 5;
-}
-
-:where(.group[data-status='removed']) .group-header {
-  opacity: 0.6;
-}
-
 :where(.edge[data-status='future']) .edge-line {
   stroke-dasharray: 6 5;
-}
-
-:where(.edge[data-status='removed']) > * {
-  opacity: 0.35;
 }
 
 .status-dot {

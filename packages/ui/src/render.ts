@@ -3,7 +3,7 @@ import 'd3-transition';
 import { easeCubicInOut } from 'd3-ease';
 import type { DiagramNode, Lifecycle } from '@mapitect/core';
 import { CARD, TABLE, type Point, type Scene, type SEdge, type SNode } from './layout.ts';
-import { ICONS, isColor, isDark, measure, statusName, type IconName } from './theme.ts';
+import { ICONS, isColor, isDark, measure, statusHint, statusName, type IconName } from './theme.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sel = Selection<any, any, any, any>;
@@ -106,6 +106,10 @@ export class Renderer {
       .select('g.btn-drill')
       .transition(t as never)
       .attr('transform', (d) => `translate(${d.w - (d.v.frame ? 46 : 82)},16)`);
+    groupsAll
+      .select(':scope > g.status-badge')
+      .transition(t as never)
+      .attr('transform', (d) => cornerAt(d.w, GROUP_RADIUS));
 
     // ------------------------------------------------------------- nodes
     const nodes = this.nodeLayer
@@ -303,7 +307,7 @@ export class Renderer {
     const v = d.v;
     const style = v.node.style;
     g.select('rect.group-bg')
-      .attr('rx', 18)
+      .attr('rx', GROUP_RADIUS)
       .style('fill', nullable(style.fill && isColor(style.fill) ? style.fill : null))
       .style('stroke', nullable(style.stroke && isColor(style.stroke) ? style.stroke : null))
       .style('stroke-dasharray', nullable(style['stroke-dash'] && style['stroke-dash'] !== '0' ? '6 5' : null))
@@ -318,15 +322,20 @@ export class Renderer {
     const adrs = this.adrCounts.get(v.id) ?? 0;
     const decisions = adrs ? ` · ${adrs} ADR${adrs === 1 ? '' : 's'}` : '';
     const meta = `${v.type.name}${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}${decisions}`;
-    const metaText = header.select('text.group-meta').text(meta.toUpperCase());
-    const status = ownStatus(v.node);
-    if (status) metaText.append('tspan').attr('class', 'status-label').text(` · ${statusName(status).toUpperCase()}`);
+    header.select('text.group-meta').text(meta.toUpperCase());
 
     const toggle = g.select('g.btn-toggle').style('display', nullable(v.frame ? 'none' : null));
     button(toggle, 'collapse', 'Collapse', () => this.on.toggle(v.id));
     const drill = g.select('g.btn-drill');
     if (v.frame) button(drill, 'arrowUp', 'Go up a level', () => this.on.up());
     else button(drill, 'drill', 'Drill in', () => this.on.drill(v.id));
+
+    // Redrawn each time; it starts where the old one was, then moves with the group's corner.
+    const old = g.select(':scope > g.status-badge');
+    const from = old.empty() ? null : old.attr('transform');
+    old.remove();
+    const badge = statusBadge(g, v.node, d.w, GROUP_RADIUS);
+    if (badge && from) badge.attr('transform', from);
   }
 
   private drawNode(g: Sel, d: SNode): void {
@@ -376,6 +385,7 @@ export class Renderer {
 
     if (v.kind === 'table') {
       this.drawTable(g, d);
+      statusBadge(g, v.node, d.w, CARD.radius);
       return;
     }
 
@@ -388,16 +398,7 @@ export class Renderer {
     const tx = CARD.pad + CARD.icon + CARD.gap;
     const headerH = Math.max(CARD.icon, 16 + c.title.length * CARD.titleLine);
     const top = CARD.pad + (headerH - (16 + c.title.length * CARD.titleLine)) / 2;
-    const typeLabel = g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9);
-    const status = ownStatus(v.node);
-    if (status) {
-      // The status matters more than the type; drop the type when both don't fit next to the badges.
-      const name = statusName(status).toUpperCase();
-      const room = d.w - tx - 16 - (this.adrCounts.get(v.id) ? 48 : 0) - (v.node.link ? 22 : 0);
-      const both = measure(`${c.typeLabel} · ${name}`, CARD.typeSize, 650) * 1.1 <= room;
-      if (both) typeLabel.append('tspan').text(`${c.typeLabel.toUpperCase()} · `);
-      typeLabel.append('tspan').attr('class', 'status-label').text(name);
-    } else typeLabel.text(c.typeLabel.toUpperCase());
+    g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9).text(c.typeLabel.toUpperCase());
     const title = g
       .append('text')
       .attr('class', 'title')
@@ -462,6 +463,8 @@ export class Renderer {
       icon(l, 'external', 13);
       onClick(l, () => this.on.openLink(url));
     }
+
+    statusBadge(g, v.node, d.w, radius);
   }
 
   private drawTable(g: Sel, d: SNode): void {
@@ -522,12 +525,63 @@ function ownStatus(node: DiagramNode): Lifecycle | null {
   return node.status && node.status !== 'live' && !node.statusFrom ? node.status : null;
 }
 
-// A connection to something removed is going away; one to something planned is planned too.
+const GROUP_RADIUS = 18;
+
+// Symbols people already know, drawn in a 12×12 box centred on the origin.
+const STATUS_GLYPHS: Record<Exclude<Lifecycle, 'live'>, string> = {
+  future: 'M0 -4.6a4.6 4.6 0 1 1 0 9.2a4.6 4.6 0 1 1 0 -9.2M0 -2.4V0l1.7 1.1', // clock: not yet
+  deprecated: 'M0 -4.4L4.7 3.8H-4.7ZM0 -1.1V1.1M0 2.5v0.01', // warning sign: on its way out
+};
+
+// Where the outline of a corner with radius `r` crosses the diagonal, at the top right of a box `w` wide.
+function cornerAt(w: number, r: number): string {
+  const inset = r * (1 - Math.SQRT1_2);
+  return `translate(${w - inset},${inset})`;
+}
+
+// The one way a lifecycle status shows, on cards, groups and tables alike: a round badge with a
+// symbol, pinned on the top-right corner like a notification badge. It sits on the outline,
+// outside the content, so names, descriptions and other badges never run into it.
+function statusBadge(g: Sel, node: DiagramNode, w: number, radius: number): Sel | null {
+  const status = ownStatus(node);
+  if (!status || status === 'live') return null;
+  const badge = g.append('g').attr('class', `status-badge st-${status}`).attr('transform', cornerAt(w, radius));
+  badge.append('circle').attr('r', 9.5);
+  badge.append('path').attr('d', STATUS_GLYPHS[status]);
+  badge
+    .on('mouseenter', (ev: MouseEvent) => showStatusTip(ev.currentTarget as Element, status))
+    .on('mouseleave', hideStatusTip);
+  return badge;
+}
+
+// One shared tooltip for the badges: the status with its badge, and what it means.
+let statusTip: HTMLDivElement | null = null;
+
+function showStatusTip(anchor: Element, status: Exclude<Lifecycle, 'live'>): void {
+  if (!statusTip) {
+    statusTip = document.createElement('div');
+    statusTip.className = 'status-tip';
+    statusTip.setAttribute('role', 'tooltip');
+    document.body.append(statusTip);
+    // Zooming, panning or clicking moves the badge away from the tooltip.
+    for (const type of ['wheel', 'pointerdown', 'blur']) window.addEventListener(type, hideStatusTip, { passive: true });
+  }
+  const mark = `<svg width="20" height="20" viewBox="-10 -10 20 20" class="status-badge st-${status}"><circle r="9.5"/><path d="${STATUS_GLYPHS[status]}"/></svg>`;
+  statusTip.innerHTML = `${mark}<div><strong>${statusName(status)}</strong><span>${statusHint(status)}</span></div>`;
+  const r = anchor.getBoundingClientRect();
+  statusTip.style.left = `${r.left + r.width / 2}px`;
+  statusTip.style.top = `${r.top - 8}px`;
+  statusTip.classList.add('open');
+}
+
+function hideStatusTip(): void {
+  statusTip?.classList.remove('open');
+}
+
+// A connection to something planned is planned too.
 function edgeStatus(scene: Scene, e: SEdge): Lifecycle | null {
   const ends = [e.v.source, e.v.target].map((id) => scene.byId.get(id)?.v.node.status);
-  if (ends.includes('removed')) return 'removed';
-  if (ends.includes('future')) return 'future';
-  return null;
+  return ends.includes('future') ? 'future' : null;
 }
 
 function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile: number, size: number): void {
