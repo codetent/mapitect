@@ -4,8 +4,8 @@
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 // Where an element is in its lifecycle, from `vars: {status: …}` on the element.
-export type Lifecycle = 'live' | 'future' | 'deprecated' | 'removed';
-export const LIFECYCLES: Lifecycle[] = ['live', 'future', 'deprecated', 'removed'];
+export type Lifecycle = 'live' | 'future' | 'deprecated';
+export const LIFECYCLES: Lifecycle[] = ['live', 'future', 'deprecated'];
 
 export interface SourceRange {
   line: number; // 0-based

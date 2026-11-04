@@ -89,15 +89,18 @@ const TYPES: Record<string, TypeInfo> = {
 };
 
 // Lifecycle statuses in menu order; elements without one count as live.
-export const STATUSES: { id: Lifecycle; name: string }[] = [
-  { id: 'live', name: 'Live' },
-  { id: 'future', name: 'Future' },
-  { id: 'deprecated', name: 'Deprecated' },
-  { id: 'removed', name: 'Removed' },
+export const STATUSES: { id: Lifecycle; name: string; hint: string }[] = [
+  { id: 'live', name: 'Live', hint: 'Running today' },
+  { id: 'future', name: 'Future', hint: 'Planned or being built' },
+  { id: 'deprecated', name: 'Deprecated', hint: 'Still running, but on its way out' },
 ];
 
 export function statusName(status: Lifecycle): string {
   return STATUSES.find((s) => s.id === status)?.name ?? status;
+}
+
+export function statusHint(status: Lifecycle): string {
+  return STATUSES.find((s) => s.id === status)?.hint ?? '';
 }
 
 export function typeOf(node: DiagramNode, depth: number, hasChildren: boolean): TypeInfo {

@@ -26,7 +26,7 @@ mapitect keeps the model where it belongs, in a `.d2` text file next to your cod
 
 - **One file, many levels.** Write the whole system once with nested containers. mapitect shows it like a C4 map: start with the landscape, then drill into a system, a container, a service. Connections into collapsed groups are merged, so every level stays readable.
 - **Text stays the source of truth.** Renaming an element, changing its description, type or color in the diagram becomes a small, targeted edit in the `.d2` file. Your formatting and comments are kept, and the change shows up in your diff like any other.
-- **Lifecycle on the map.** Mark elements as `future`, `deprecated` or `removed` with `vars: {status: …}`. They are drawn differently, and a filter switches between the current and the target architecture.
+- **Lifecycle on the map.** Mark elements as `future` or `deprecated` with `vars: {status: …}`. They get a status badge, and a filter switches between the current and the target architecture.
 - **Decisions live with the components.** Point mapitect at your [MADR](https://adr.github.io/madr/) decision records and each element shows the decisions that shaped it, readable right next to the map.
 - **Real D2.** The official D2 compiler (WASM) parses the file, so classes, vars, globs and imports work exactly as they do in `d2` itself.
 

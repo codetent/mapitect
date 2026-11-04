@@ -125,7 +125,7 @@ test('setDirection rewrites or adds the root direction', async () => {
 test('status comes from the element\'s vars and applies to everything inside it', async () => {
   const { model } = await build(
     [
-      'vars: {status: removed}',
+      'vars: {status: future}',
       'shop: {',
       '  vars: {status: deprecated; owner: team-a}',
       '  web: {vars: {status: future}}',
@@ -153,12 +153,20 @@ test('status comes from the element\'s vars and applies to everything inside it'
   assert.equal(model.issues[0].range.line, 9);
 });
 
+test('removed is not a status any more', async () => {
+  const { model } = await build('old: {vars: {status: removed}}\n');
+  assert.equal(model.nodes.old.status, undefined);
+  assert.match(model.issues[0].message, /Unknown status "removed"; use live, future, deprecated/);
+  const built = await build('a\n');
+  assert.throws(() => planEdit('a\n', built, { op: 'setStatus', id: 'a', value: 'removed' as never }), EditError);
+});
+
 test('setStatus writes vars: {status: …} and removes it again', async () => {
   let r = await edit('a: A {\n  shape: cloud\n}\n', { op: 'setStatus', id: 'a', value: 'future' });
   assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: future}\n}\n');
   assert.equal(r.model.nodes.a.status, 'future');
-  r = await edit(r.text, { op: 'setStatus', id: 'a', value: 'removed' });
-  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: removed}\n}\n');
+  r = await edit(r.text, { op: 'setStatus', id: 'a', value: 'deprecated' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: deprecated}\n}\n');
   r = await edit(r.text, { op: 'setStatus', id: 'a', value: null });
   assert.equal(r.text, 'a: A {\n  shape: cloud\n}\n', 'a vars block holding only the status goes too');
   r = await edit('a: {\n  vars: {\n    owner: x\n  }\n}\n', { op: 'setStatus', id: 'a', value: 'deprecated' });
