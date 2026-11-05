@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0](https://github.com/codetent/mapitect/compare/v0.2.0...v0.3.0) (2026-11-05)
+
+
+### Features
+
+* **core:** The removed lifecycle status is gone; use deprecated for what is on its way out ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+* Lifecycle statuses show as a badge with a symbol on the element's top-right corner, with a tooltip that explains it, instead of restyling the card ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+* **ui:** show the lifecycle status as a corner badge with a tooltip ([2e01cce](https://github.com/codetent/mapitect/commit/2e01cce9eeb58e30f7ac341f01231cc428c2e791))
+* **ui:** show the lifecycle status as a corner badge with a tooltip ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+
 ## [0.2.0](https://github.com/codetent/mapitect/compare/v0.1.0...v0.2.0) (2026-11-03)
 
 
