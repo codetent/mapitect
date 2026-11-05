@@ -114,7 +114,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     cursor: null as string | null,
     sidebar: saved?.sidebar ?? false,
     minimap: saved?.minimap ?? false,
-    hidden: new Set<Lifecycle>(saved?.hidden ?? []),
+    hidden: new Set<Lifecycle>((saved?.hidden ?? []).filter((h) => STATUSES.some((s) => s.id === h))), // a saved status may no longer exist
     level: null as number | null,
     wheel: 'auto',
   };

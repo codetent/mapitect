@@ -55,7 +55,7 @@ shop: Bookshop {
 
     recommendations: Recommendations {
       tooltip: "\"Readers also bought\" suggestions."
-      # Lifecycle status: live (the default), future, deprecated or removed.
+      # Lifecycle status: live (the default), future or deprecated.
       vars: {status: future}
     }
 
@@ -103,8 +103,8 @@ shop: Bookshop {
 
     search: Elasticsearch {
       shape: cylinder
-      tooltip: Replaced by PostgreSQL full-text search.
-      vars: {status: removed}
+      tooltip: Being replaced by PostgreSQL full-text search.
+      vars: {status: deprecated}
     }
 
     bus: Order events {
