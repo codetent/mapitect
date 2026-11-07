@@ -48,6 +48,8 @@ class Planner {
         return this.setEdgeLabel(op.id, op.label);
       case 'setStatus':
         return this.setStatus(this.segs(op.id), op.value);
+      case 'setTechnology':
+        return this.setVar(this.segs(op.id), 'technology', op.value?.trim() ? formatValue(op.value) : null);
       case 'setDirection':
         return this.setDirection(op.value);
       default:
@@ -149,13 +151,17 @@ class Planner {
     return this.append(segs.slice(0, -1), `${formatKeySeg(segs[segs.length - 1])}.${line}`);
   }
 
-  // The element's own `vars: {status: …}`. D2 only accepts `vars` as the last part of a key,
-  // so a new status goes into an existing `vars` block or a new `vars: {status: …}`.
   private setStatus(segs: string[], value: Lifecycle | null): TextEdit[] {
     if (value !== null && !LIFECYCLES.includes(value)) throw new EditError(`"${value}" is not a status`);
-    const existing = this.attrStmts(segs, ['vars', 'status']);
+    return this.setVar(segs, 'status', value);
+  }
+
+  // The element's own `vars: {<name>: …}`, with `value` already formatted. D2 only accepts `vars` as the
+  // last part of a key, so a new entry goes into an existing `vars` block or a new `vars: {<name>: …}`.
+  private setVar(segs: string[], name: string, value: string | null): TextEdit[] {
+    const existing = this.attrStmts(segs, ['vars', name]);
     if (value === null) {
-      // Take the whole `vars` block along when the status is all it holds.
+      // Take the whole `vars` block along when the entry is all it holds.
       const alone = (s: Stmt) => s.parent?.kind === 'attr' && s.parent.mk.value.map?.nodes?.filter((n) => n.map_key).length === 1;
       return this.removeAll(existing.map((s) => (alone(s) ? s.parent! : s)));
     }
@@ -164,8 +170,8 @@ class Planner {
     const vars = this.built.index.stmts.filter(
       (s) => s.kind === 'attr' && sameSegs(s.node!, segs) && s.attr!.length === 1 && s.attr![0].toLowerCase() === 'vars' && s.mk.value.map,
     );
-    if (vars.length) return [this.insertInBlock(vars[vars.length - 1], `status: ${value}`)];
-    return [this.addToNode(segs, `vars: {status: ${value}}`)];
+    if (vars.length) return [this.insertInBlock(vars[vars.length - 1], `${name}: ${value}`)];
+    return [this.addToNode(segs, `vars: {${name}: ${value}}`)];
   }
 
   private checkShapeChange(segs: string[], shape: string): void {

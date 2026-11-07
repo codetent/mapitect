@@ -33,6 +33,8 @@ shop: Bookshop {
   web: Storefront {
     icon: https://icons.terrastruct.com/dev%2Freact.svg
     tooltip: React app serving the public shop.
+    # Technology: free text, shown next to the type.
+    vars: {technology: React 19}
     link: https://react.dev
     style.underline: true
   }
@@ -48,15 +50,18 @@ shop: Bookshop {
   }
 
   backend: Backend {
+    vars: {technology: Amazon ECS}
+
     catalog: Catalog Service {
       tooltip: Books, authors and search.
+      vars: {technology: Go}
       style.multiple: true
     }
 
     recommendations: Recommendations {
       tooltip: "\"Readers also bought\" suggestions."
       # Lifecycle status: live (the default), future or deprecated.
-      vars: {status: future}
+      vars: {status: future; technology: Python}
     }
 
     orders: Order Service {
@@ -95,6 +100,7 @@ shop: Bookshop {
       shape: cylinder
       icon: https://icons.terrastruct.com/dev%2Fpostgresql.svg
       tooltip: Books and orders.
+      vars: {technology: PostgreSQL 16}
     }
 
     replica: Read replica {

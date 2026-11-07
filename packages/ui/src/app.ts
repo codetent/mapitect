@@ -10,7 +10,7 @@ import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer } from './render.ts';
 import { exportPng, exportSvg } from './export.ts';
 import { typeOf, plainLabel, statusName, STATUSES, type IconName } from './theme.ts';
-import { ancestry, buildView, collapseToLevel, depthOf, isWithin, type VEdge, type VisibleGraph } from './view.ts';
+import { ancestry, buildView, collapseToLevel, depthOf, isWithin, techKey, type VEdge, type VisibleGraph } from './view.ts';
 
 // The whole diagram UI. It runs in any browser context; everything outside
 // the page (the D2 source, files, dialogs) goes through the HostBridge.
@@ -23,6 +23,7 @@ interface PersistedState {
   sidebar: boolean;
   minimap: boolean;
   hidden?: Lifecycle[]; // statuses filtered out of the map
+  hiddenTech?: string[]; // technologies filtered out, by techKey; '' is "no technology"
 }
 
 // One group in the filter menu (e.g. status) and the values it can hide.
@@ -30,7 +31,7 @@ interface FilterGroup {
   id: string;
   label: string;
   title: string;
-  options: { id: string; label: string; dot?: string; count: number; on: boolean }[];
+  options: { id: string; label: string; dot?: string; muted?: boolean; count: number; on: boolean }[];
 }
 
 export function mount(app: HTMLElement, host: HostBridge): void {
@@ -125,6 +126,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     sidebar: saved?.sidebar ?? false,
     minimap: saved?.minimap ?? false,
     hidden: new Set<Lifecycle>((saved?.hidden ?? []).filter((h) => STATUSES.some((s) => s.id === h))), // a saved status may no longer exist
+    hiddenTech: new Set<string>(saved?.hiddenTech ?? []),
     level: null as number | null,
     wheel: 'auto',
   };
@@ -167,6 +169,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       sidebar: view.sidebar,
       minimap: view.minimap,
       hidden: [...view.hidden],
+      hiddenTech: [...view.hiddenTech],
     });
   }
 
@@ -546,7 +549,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     const adrHit = (a: Adr) => a.title.toLowerCase().includes(q) || adrNumber(a).toLowerCase().includes(q);
     if (q) {
       for (const n of Object.values(model.nodes)) {
-        const own = n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q) || n.tooltip?.toLowerCase().includes(q);
+        const own = [n.label, n.id, n.tooltip, n.technology].some((t) => t?.toLowerCase().includes(q));
         if (own) matches.add(n.id);
         if (own || adrIndex?.components[n.id]?.some(adrHit)) for (const a of ancestry(model, n.id)) keep.add(a);
       }
@@ -795,6 +798,8 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       ${path.length ? `<div class="d-path">${path.map((p) => `<button class="link" data-reveal="${esc(p)}">${esc(firstLine(model!.nodes[p].label))}</button>`).join(`<span>${iconSvg('chevronRight', 10)}</span>`)}</div>` : ''}
       <label class="field"><span class="field-label">Description</span>
         <textarea data-field="tooltip" rows="2" placeholder="What is it responsible for?" ${dis}>${esc(n.tooltip ?? '')}</textarea></label>
+      <label class="field"><span class="field-label">Technology</span>
+        <input data-field="technology" value="${esc(n.technology ?? '')}" placeholder="e.g. Go, PostgreSQL 16, Kafka" spellcheck="false" ${dis} /></label>
       ${n.fields?.length ? '' : `<div class="field"><span class="field-label">Type</span><div class="shape-grid">${SHAPES.map(([shape, name, icon]) => `<button data-shape="${shape}" title="${name}" class="${n.shape === shape ? 'active' : ''}" ${dis}>${iconSvg(icon, 16)}</button>`).join('')}</div></div>`}
       ${statusField(n, dis)}
       <div class="field"><span class="field-label">Color</span><div class="swatches">
@@ -853,6 +858,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     const value = el.value.trim();
     if (field === 'label') sendEdit({ op: 'setLabel', id: sel, label: value });
     else if (field === 'tooltip' || field === 'link') sendEdit({ op: 'setAttr', id: sel, attr: [field], value: value || null });
+    else if (field === 'technology') sendEdit({ op: 'setTechnology', id: sel, value: value || null });
     else if (field === 'edge-label') {
       const e = directEdge(sel);
       if (e) sendEdit({ op: 'setEdgeLabel', id: e.id, label: value });
@@ -944,7 +950,31 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         options: STATUSES.map((s) => ({ id: s.id, label: s.name, dot: `status-dot st-${s.id}`, count: counts.get(s.id) ?? 0, on: !view.hidden.has(s.id) })),
       });
     }
+    groups.push(...technologyGroup(model));
     return groups;
+  }
+
+  // One option per technology (as first written), A to Z, then the elements without one.
+  function technologyGroup(model: DiagramModel): FilterGroup[] {
+    const techs = new Map<string, { label: string; count: number }>();
+    for (const n of Object.values(model.nodes)) {
+      const key = techKey(n);
+      const t = techs.get(key) ?? { label: key ? n.technology!.replace(/\s+/g, ' ').trim() : 'Unspecified', count: 0 };
+      t.count++;
+      techs.set(key, t);
+    }
+    for (const key of view.hiddenTech) if (!techs.has(key)) techs.set(key, { label: key || 'Unspecified', count: 0 });
+    if (![...techs.keys()].some(Boolean) && !view.hiddenTech.size) return [];
+    techs.set('', techs.get('') ?? { label: 'Unspecified', count: 0 });
+    const keys = [...techs.keys()].filter(Boolean).sort((a, b) => techs.get(a)!.label.localeCompare(techs.get(b)!.label));
+    return [
+      {
+        id: 'technology',
+        label: 'Technology',
+        title: 'Show elements built with',
+        options: [...keys, ''].map((key) => ({ id: key, label: techs.get(key)!.label, muted: !key, count: techs.get(key)!.count, on: !view.hiddenTech.has(key) })),
+      },
+    ];
   }
 
   function toggleFilter(group: string, option: string): void {
@@ -952,7 +982,11 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       const status = option as Lifecycle;
       if (view.hidden.has(status)) view.hidden.delete(status);
       else view.hidden.add(status);
+    } else if (group === 'technology') {
+      if (view.hiddenTech.has(option)) view.hiddenTech.delete(option);
+      else view.hiddenTech.add(option);
     }
+    persist();
     void refresh({ animate: true });
   }
 
@@ -976,8 +1010,8 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       ? `<div class="menu-title">${esc(open.title)}</div>
         ${open.options
           .map(
-            (o) => `<button data-filter-toggle="${open.id}:${esc(o.id)}" class="${o.on ? 'on' : ''}">
-              <span class="check">${iconSvg('check', 12)}</span>${o.dot ? `<span class="${o.dot}"></span>` : ''}${esc(o.label)}<span class="count">${o.count}</span>
+            (o) => `<button data-filter-toggle="${open.id}:${esc(o.id)}" class="${o.on ? 'on' : ''}" title="${esc(o.label)}">
+              <span class="check">${iconSvg('check', 12)}</span>${o.dot ? `<span class="${o.dot}"></span>` : ''}<span class="label${o.muted ? ' muted' : ''}">${esc(o.label)}</span><span class="count">${o.count}</span>
             </button>`,
           )
           .join('')}`

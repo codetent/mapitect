@@ -83,7 +83,7 @@ function stringOf(box: StringBox): AstString | undefined {
 
 export function boxText(box: StringBox): string {
   const s = stringOf(box);
-  if (!s) return '';
+  if (!s?.value) return ''; // `""` has no value
   if (typeof s.value === 'string') return s.value;
   return s.value.map((p) => p.string ?? (p.substitution ? '${…}' : '')).join('');
 }
