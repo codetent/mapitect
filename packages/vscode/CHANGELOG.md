@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/codetent/mapitect/compare/v0.2.0...v0.3.0) (2026-11-07)
+
+
+### Features
+
+* add a free-text technology to elements ([9ed6053](https://github.com/codetent/mapitect/commit/9ed6053f6ddf867dd81b29d0e28ee8fba6cd74c3))
+* add a free-text technology to elements ([d353dc3](https://github.com/codetent/mapitect/commit/d353dc3ac7cfad83955a770600d775623573f73b))
+* **core:** The removed lifecycle status is gone; use deprecated for what is on its way out ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+* Lifecycle statuses show as a badge with a symbol on the element's top-right corner, with a tooltip that explains it, instead of restyling the card ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+* **ui:** move level and filters to a bottom-left bar and group the f… ([c168a1c](https://github.com/codetent/mapitect/commit/c168a1c28222b9d5cfdb67acc34a1f3df0c853fd))
+* **ui:** move level and filters to a bottom-left bar and group the filter menu ([cc25f23](https://github.com/codetent/mapitect/commit/cc25f2399fe25a1ec9a2eded55cae60c04727f9c))
+* **ui:** show the lifecycle status as a corner badge with a tooltip ([2e01cce](https://github.com/codetent/mapitect/commit/2e01cce9eeb58e30f7ac341f01231cc428c2e791))
+* **ui:** show the lifecycle status as a corner badge with a tooltip ([ab84c48](https://github.com/codetent/mapitect/commit/ab84c485268647c2b24fce54a9f2d1dc26bb04f2))
+
 ## [0.2.0](https://github.com/codetent/mapitect/compare/v0.1.0...v0.2.0) (2026-11-03)
 
 
