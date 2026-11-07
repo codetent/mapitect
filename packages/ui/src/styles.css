@@ -442,7 +442,7 @@ kbd {
   align-items: center;
   gap: 2px;
   height: 42px;
-  padding: 0 6px;
+  padding: 0 5px;
   max-width: calc(100% - 300px - 330px);
   transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 4;
@@ -451,6 +451,20 @@ kbd {
 .no-sidebar .topbar {
   left: 12px;
   max-width: calc(100% - 24px - 330px);
+}
+
+/* At the top level there are no crumbs, so only the show-sidebar button can fill the bar. */
+.topbar:has(.crumbs:empty) {
+  display: none;
+}
+
+.no-sidebar .topbar:has(.crumbs:empty) {
+  display: flex;
+}
+
+/* An empty crumbs nav would still take a flex gap beside the button. */
+.crumbs:empty {
+  display: none;
 }
 
 .show-sidebar {
@@ -566,9 +580,59 @@ kbd {
   display: flex;
 }
 
+/* A blurring element confines the blur of glass inside it to its own box, so menus
+   nested in these bars would show the canvas unblurred. The bars draw their glass
+   on a layer behind their content instead, which lets the menus blur the canvas. */
+.toolbar.glass,
+.viewbar.glass {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.toolbar.glass::before,
+.viewbar.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--panel);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+}
+
 /* An open menu drops over the details panel below the toolbar. */
-.toolbar:has(.menu-wrap.open) {
+.toolbar:has(.menu-wrap.open),
+.viewbar:has(.menu-wrap.open) {
   z-index: 6;
+}
+
+/* ------------------------------------------------------- view bar (level & filter) */
+
+/* Bottom left, beside the sidebar when it is open; its menus open upwards. */
+.viewbar {
+  position: absolute;
+  left: 284px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 5px;
+  z-index: 4;
+  transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.no-sidebar .viewbar {
+  left: 12px;
+}
+
+.viewbar .menu {
+  top: auto;
+  bottom: calc(100% + 10px);
+  right: auto;
+  left: -6px;
 }
 
 .menu button {
@@ -2135,20 +2199,66 @@ body.theme-light {
   margin-left: auto;
 }
 
-.status-wrap,
-.status-sep {
+/* ---------------------------------------------------------------- filters */
+
+.filter-wrap,
+.filter-sep {
   display: none;
 }
 
-.has-status .status-wrap {
+.has-filters .filter-wrap {
   display: block;
 }
 
-.has-status .status-sep {
+.has-filters .filter-sep {
   display: inline-block;
 }
 
-.status-menu {
+/* The group list and the open group's options sit side by side. They are siblings,
+   not nested, so each keeps its own backdrop blur. */
+.menu-stack {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: -6px;
+  display: none;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.menu-wrap.open .menu-stack {
+  display: flex;
+}
+
+.menu-stack .menu {
+  position: static;
+  display: flex;
+}
+
+.menu-stack .filter-options:not(.show) {
+  display: none;
+}
+
+.filter-groups button,
+.filter-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-groups button.active {
+  background: var(--hover);
+}
+
+.filter-groups .grow {
+  flex: 1;
+}
+
+.filter-groups .chev {
+  display: grid;
+  color: var(--faint);
+}
+
+.filter-options {
   min-width: 200px;
 }
 
@@ -2162,13 +2272,7 @@ body.theme-light {
   color: var(--faint);
 }
 
-.status-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-menu .check {
+.filter-options .check {
   display: grid;
   place-items: center;
   width: 16px;
@@ -2178,18 +2282,22 @@ body.theme-light {
   color: transparent;
 }
 
-.status-menu button.on .check {
+.filter-options button.on .check {
   color: #fff;
   background: var(--primary);
   border-color: var(--primary);
 }
 
-.status-menu button:not(.on) {
+.filter-options button:not(.on) {
   color: var(--muted);
 }
 
-.status-menu .count {
+.filter-options .count {
   margin-left: auto;
+}
+
+.filter-groups .count,
+.filter-options .count {
   font-size: 11px;
   color: var(--faint);
 }

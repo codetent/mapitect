@@ -2,7 +2,7 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, Direction, EditOp, Lifecycle, SourceRange, UiMessage } from '@mapitect/core';
+import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, EditOp, Lifecycle, SourceRange, UiMessage } from '@mapitect/core';
 import type { HostBridge } from './bridge.ts';
 import { adrNumber, DecisionReader, statusLabel, statusPill } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
@@ -23,6 +23,14 @@ interface PersistedState {
   sidebar: boolean;
   minimap: boolean;
   hidden?: Lifecycle[]; // statuses filtered out of the map
+}
+
+// One group in the filter menu (e.g. status) and the values it can hide.
+interface FilterGroup {
+  id: string;
+  label: string;
+  title: string;
+  options: { id: string; label: string; dot?: string; count: number; on: boolean }[];
 }
 
 export function mount(app: HTMLElement, host: HostBridge): void {
@@ -49,23 +57,25 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         <button class="icon-btn" data-action="undo" title="Undo (⌘Z)">${iconSvg('undo', 16)}</button>
         <button class="icon-btn" data-action="redo" title="Redo (⇧⌘Z)">${iconSvg('redo', 16)}</button>
         <span class="sep"></span>
-        <div class="segmented" title="Detail level">
-          <span class="seg-label">Level</span>
-          <button data-level="1">1</button><button data-level="2">2</button><button data-level="3">3</button><button data-level="0">All</button>
-        </div>
-        <span class="sep"></span>
-        <button class="icon-btn" data-action="direction" title="Layout direction (writes direction: … to the file)">${iconSvg('arrowRight', 16)}</button>
-        <span class="sep status-sep"></span>
-        <div class="menu-wrap status-wrap">
-          <button class="icon-btn" data-action="status-menu" title="Filter by status">${iconSvg('lifecycle', 16)}</button>
-          <div class="menu glass status-menu"></div>
-        </div>
-        <span class="sep"></span>
         <div class="menu-wrap export-wrap">
           <button class="icon-btn" data-action="export" title="Export">${iconSvg('download', 16)}</button>
           <div class="menu glass">
             <button data-export="svg">Export as SVG</button>
             <button data-export="png">Export as PNG</button>
+          </div>
+        </div>
+      </div>
+      <div class="viewbar glass">
+        <div class="segmented" title="Detail level">
+          <span class="seg-label">Level</span>
+          <button data-level="1">1</button><button data-level="2">2</button><button data-level="3">3</button><button data-level="0">All</button>
+        </div>
+        <span class="sep filter-sep"></span>
+        <div class="menu-wrap filter-wrap">
+          <button class="icon-btn" data-action="filter-menu" title="Filter">${iconSvg('filter', 16)}</button>
+          <div class="menu-stack">
+            <div class="menu glass filter-groups"></div>
+            <div class="menu glass filter-options"></div>
           </div>
         </div>
       </div>
@@ -320,7 +330,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     renderTree();
     renderDetails();
     renderLevelButtons();
-    renderStatusMenu();
+    renderFilterMenu();
     applyHighlight();
     updateMinimapViewport(currentTransform());
     persist();
@@ -501,13 +511,11 @@ export function mount(app: HTMLElement, host: HostBridge): void {
 
   function renderCrumbs(): void {
     if (!model) return;
-    const parts: { id: string | null; label: string; icon?: IconName }[] = [{ id: null, label: 'Overview', icon: 'home' }];
-    if (view.focus) for (const id of ancestry(model, view.focus)) parts.push({ id, label: model.nodes[id].label });
-    crumbsEl.innerHTML = parts
-      .map((p, i) => {
-        const last = i === parts.length - 1;
-        const icon = p.icon ? iconSvg(p.icon, 14) : '';
-        return `${i ? `<span class="crumb-sep">${iconSvg('chevronRight', 12)}</span>` : ''}<button class="crumb${last ? ' current' : ''}" data-focus="${p.id === null ? '' : esc(p.id)}">${icon}<span>${esc(firstLine(p.label))}</span></button>`;
+    const ids = view.focus ? ancestry(model, view.focus) : [];
+    crumbsEl.innerHTML = ids
+      .map((id, i) => {
+        const last = i === ids.length - 1;
+        return `${i ? `<span class="crumb-sep">${iconSvg('chevronRight', 12)}</span>` : ''}<button class="crumb${last ? ' current' : ''}" data-focus="${esc(id)}"><span>${esc(firstLine(model!.nodes[id].label))}</span></button>`;
       })
       .join('');
   }
@@ -913,34 +921,80 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     app.querySelectorAll<HTMLButtonElement>('[data-level]').forEach((b) => {
       b.classList.toggle('active', Number(b.dataset.level) === activeLevel());
     });
-    const dirBtn = $('[data-action="direction"]');
-    const dir = model?.direction ?? 'down';
-    dirBtn.style.transform = `rotate(${{ right: 0, down: 90, left: 180, up: 270 }[dir]}deg)`;
     app.classList.toggle('no-sidebar', !view.sidebar);
     app.classList.toggle('no-minimap', !view.minimap);
   }
 
-  // Only diagrams that use statuses get the filter; a hidden status stays listed so it can come back.
-  function renderStatusMenu(): void {
-    if (!model) return;
+  // ------------------------------------------------------------------ filters
+
+  // The group whose options are open beside the group list.
+  let filterGroup: string | null = null;
+
+  // A group is offered only when the diagram uses it; a hidden value stays listed so it can come back.
+  function filterGroups(): FilterGroup[] {
+    if (!model) return [];
+    const groups: FilterGroup[] = [];
     const counts = new Map<Lifecycle, number>();
     for (const n of Object.values(model.nodes)) counts.set(n.status ?? 'live', (counts.get(n.status ?? 'live') ?? 0) + 1);
-    const used = [...counts.keys()].some((s) => s !== 'live') || view.hidden.size > 0;
-    app.classList.toggle('has-status', used);
-    $('[data-action="status-menu"]').classList.toggle('active', view.hidden.size > 0);
-    $('.status-menu').innerHTML = `<div class="menu-title">Show elements that are</div>
-      ${STATUSES.map(
-        (s) => `<button data-status-toggle="${s.id}" class="${view.hidden.has(s.id) ? '' : 'on'}">
-          <span class="check">${iconSvg('check', 12)}</span><span class="status-dot st-${s.id}"></span>${s.name}<span class="count">${counts.get(s.id) ?? 0}</span>
-        </button>`,
-      ).join('')}`;
+    if ([...counts.keys()].some((s) => s !== 'live') || view.hidden.size > 0) {
+      groups.push({
+        id: 'status',
+        label: 'Status',
+        title: 'Show elements that are',
+        options: STATUSES.map((s) => ({ id: s.id, label: s.name, dot: `status-dot st-${s.id}`, count: counts.get(s.id) ?? 0, on: !view.hidden.has(s.id) })),
+      });
+    }
+    return groups;
   }
 
-  function toggleStatus(status: Lifecycle): void {
-    if (view.hidden.has(status)) view.hidden.delete(status);
-    else view.hidden.add(status);
+  function toggleFilter(group: string, option: string): void {
+    if (group === 'status') {
+      const status = option as Lifecycle;
+      if (view.hidden.has(status)) view.hidden.delete(status);
+      else view.hidden.add(status);
+    }
     void refresh({ animate: true });
   }
+
+  function renderFilterMenu(): void {
+    const groups = filterGroups();
+    const open = groups.find((g) => g.id === filterGroup);
+    app.classList.toggle('has-filters', groups.length > 0);
+    $('[data-action="filter-menu"]').classList.toggle('active', groups.some((g) => g.options.some((o) => !o.on)));
+    $('.filter-groups').innerHTML = `<div class="menu-title">Filter by</div>
+      ${groups
+        .map((g) => {
+          const off = g.options.filter((o) => !o.on).length;
+          return `<button data-filter-group="${g.id}" class="${g === open ? 'active' : ''}">
+            <span class="grow">${esc(g.label)}</span>${off ? `<span class="count">${off} hidden</span>` : ''}<span class="chev">${iconSvg('chevronRight', 12)}</span>
+          </button>`;
+        })
+        .join('')}`;
+    const sub = $('.filter-options');
+    sub.classList.toggle('show', !!open);
+    sub.innerHTML = open
+      ? `<div class="menu-title">${esc(open.title)}</div>
+        ${open.options
+          .map(
+            (o) => `<button data-filter-toggle="${open.id}:${esc(o.id)}" class="${o.on ? 'on' : ''}">
+              <span class="check">${iconSvg('check', 12)}</span>${o.dot ? `<span class="${o.dot}"></span>` : ''}${esc(o.label)}<span class="count">${o.count}</span>
+            </button>`,
+          )
+          .join('')}`
+      : '';
+  }
+
+  function openFilterGroup(id: string): void {
+    if (id === filterGroup) return;
+    filterGroup = id;
+    renderFilterMenu();
+  }
+
+  // Like any cascading menu, pointing at a group opens its options.
+  $('.filter-groups').addEventListener('mouseover', (ev) => {
+    const id = (ev.target as Element).closest<HTMLElement>('[data-filter-group]')?.dataset.filterGroup;
+    if (id) openFilterGroup(id);
+  });
 
   // The level whose collapse state is showing; the last one picked wins ties.
   function activeLevel(): number | null {
@@ -962,10 +1016,14 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   }
 
   app.addEventListener('click', (ev) => {
-    const el = (ev.target as Element).closest<HTMLElement>('[data-action], [data-level], [data-export], [data-status-toggle]');
+    const el = (ev.target as Element).closest<HTMLElement>('[data-action], [data-level], [data-export], [data-filter-group], [data-filter-toggle]');
     if (!el || detailsEl.contains(el)) return;
     if (el.dataset.level !== undefined) return setLevel(Number(el.dataset.level));
-    if (el.dataset.statusToggle) return toggleStatus(el.dataset.statusToggle as Lifecycle);
+    if (el.dataset.filterGroup) return openFilterGroup(el.dataset.filterGroup);
+    if (el.dataset.filterToggle) {
+      const [group, option] = el.dataset.filterToggle.split(/:(.*)/);
+      return toggleFilter(group, option);
+    }
     if (el.dataset.export) {
       $('.export-wrap').classList.remove('open');
       return void doExport(el.dataset.export as 'svg' | 'png');
@@ -979,19 +1037,15 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         view.minimap = !view.minimap;
         renderLevelButtons();
         return persist();
-      case 'direction': {
-        // Written to the file as `direction: …`; the diagram follows the next compile.
-        const order: Direction[] = ['right', 'down', 'left', 'up'];
-        const cur = model?.direction ?? 'down';
-        return sendEdit({ op: 'setDirection', value: order[(order.indexOf(cur) + 1) % 4] });
-      }
       case 'export':
-        $('.status-wrap').classList.remove('open');
+        $('.filter-wrap').classList.remove('open');
         $('.export-wrap').classList.toggle('open');
         return;
-      case 'status-menu':
+      case 'filter-menu':
         $('.export-wrap').classList.remove('open');
-        $('.status-wrap').classList.toggle('open');
+        filterGroup = null;
+        renderFilterMenu();
+        $('.filter-wrap').classList.toggle('open');
         return;
       case 'zoom-in':
         return zoomBy(1.4);

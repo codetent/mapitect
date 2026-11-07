@@ -58,6 +58,7 @@ export const ICONS = {
   bidirectional: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
   lifecycle: 'M4 22V4M4 4h13l-2.5 4L17 12H4',
   check: 'M20 6L9 17l-5-5',
+  filter: 'M3 4h18l-7 8.5V19l-4 2v-8.5z',
 } as const;
 
 export type IconName = keyof typeof ICONS;
