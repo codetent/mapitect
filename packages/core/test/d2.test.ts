@@ -182,6 +182,45 @@ test('setStatus writes vars: {status: …} and removes it again', async () => {
   assert.throws(() => planEdit('a\n', built, { op: 'setStatus', id: 'a', value: 'beta' as never }), EditError);
 });
 
+test('technology is freetext from the element\'s own vars and is not inherited', async () => {
+  const { model } = await build(
+    [
+      'vars: {technology: Go}',
+      'shop: {',
+      '  vars: {technology: Kubernetes; status: future}',
+      '  api: {vars: {technology: "Node.js 20"}}',
+      '  web',
+      '}',
+      'db.vars: {technology: PostgreSQL 16}',
+      'blank: {vars: {technology: ""}}',
+    ].join('\n'),
+  );
+  assert.equal(model.nodes.shop.technology, 'Kubernetes');
+  assert.equal(model.nodes.shop.status, 'future');
+  assert.equal(model.nodes['shop.api'].technology, 'Node.js 20');
+  assert.equal(model.nodes['shop.web'].technology, undefined, 'not inherited');
+  assert.equal(model.nodes.db.technology, 'PostgreSQL 16');
+  assert.equal(model.nodes.blank.technology, undefined);
+  assert.equal(model.issues.length, 0);
+});
+
+test('setTechnology writes vars: {technology: …} next to other vars and removes it again', async () => {
+  let r = await edit('a: A {\n  shape: cloud\n}\n', { op: 'setTechnology', id: 'a', value: 'Go' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {technology: Go}\n}\n');
+  assert.equal(r.model.nodes.a.technology, 'Go');
+  r = await edit(r.text, { op: 'setStatus', id: 'a', value: 'future' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {technology: Go; status: future}\n}\n', 'shares the vars block');
+  r = await edit(r.text, { op: 'setTechnology', id: 'a', value: 'Spring Boot; Java 21' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {technology: "Spring Boot; Java 21"; status: future}\n}\n', 'quoted when needed');
+  assert.equal(r.model.nodes.a.technology, 'Spring Boot; Java 21');
+  r = await edit(r.text, { op: 'setTechnology', id: 'a', value: '  ' });
+  assert.equal(r.text, 'a: A {\n  shape: cloud\n  vars: {status: future}\n}\n', 'blank removes it, the status stays');
+  r = await edit('db: Database\n', { op: 'setTechnology', id: 'db', value: 'PostgreSQL 16' });
+  assert.equal(r.text, 'db: Database\ndb.vars: {technology: PostgreSQL 16}\n');
+  r = await edit(r.text, { op: 'setTechnology', id: 'db', value: null });
+  assert.equal(r.text, 'db: Database\n');
+});
+
 test('structural edits are refused: the D2 source owns elements and connections', async () => {
   const text = 'a -> b\nt: {shape: sql_table; id: int}\n';
   const built = await build(text);

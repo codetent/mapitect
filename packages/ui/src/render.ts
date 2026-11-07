@@ -3,7 +3,7 @@ import 'd3-transition';
 import { easeCubicInOut } from 'd3-ease';
 import type { DiagramNode, Lifecycle } from '@mapitect/core';
 import { CARD, TABLE, type Point, type Scene, type SEdge, type SNode } from './layout.ts';
-import { ICONS, isColor, isDark, measure, statusHint, statusName, type IconName } from './theme.ts';
+import { ICONS, isColor, isDark, measure, statusHint, statusName, wrap, type IconName } from './theme.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sel = Selection<any, any, any, any>;
@@ -321,8 +321,11 @@ export class Renderer {
     header.select('text.group-title').text(v.node.label.replace(/\n/g, ' '));
     const adrs = this.adrCounts.get(v.id) ?? 0;
     const decisions = adrs ? ` · ${adrs} ADR${adrs === 1 ? '' : 's'}` : '';
-    const meta = `${v.type.name}${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}${decisions}`;
-    header.select('text.group-meta').text(meta.toUpperCase());
+    const meta = header.select('text.group-meta').text(v.type.name.toUpperCase());
+    // The technology keeps its own spelling; the rest of the line is set in caps.
+    if (v.node.technology) technology(meta, v.node.technology, 180);
+    const rest = `${v.frame ? ' · focused' : ''} · ${v.descendants} item${v.descendants === 1 ? '' : 's'}${decisions}`;
+    meta.append('tspan').text(rest.toUpperCase());
 
     const toggle = g.select('g.btn-toggle').style('display', nullable(v.frame ? 'none' : null));
     button(toggle, 'collapse', 'Collapse', () => this.on.toggle(v.id));
@@ -398,7 +401,14 @@ export class Renderer {
     const tx = CARD.pad + CARD.icon + CARD.gap;
     const headerH = Math.max(CARD.icon, 16 + c.title.length * CARD.titleLine);
     const top = CARD.pad + (headerH - (16 + c.title.length * CARD.titleLine)) / 2;
-    g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9).text(c.typeLabel.toUpperCase());
+    const typeLabel = g.append('text').attr('class', 'type-label').attr('x', tx).attr('y', top + 9).text(c.typeLabel.toUpperCase());
+    if (v.node.technology) {
+      // Up to the ADR badge or link mark in the corner, whichever comes first.
+      const adrW = this.adrCounts.get(v.id) ? measure(String(this.adrCounts.get(v.id)), 10.5, 650) + 28 : 0;
+      const right = d.w - 10 - (v.node.link ? 26 : 0) - (adrW ? adrW + 6 : 4);
+      const used = measure(c.typeLabel.toUpperCase(), CARD.typeSize, 650) + c.typeLabel.length * 0.8;
+      technology(typeLabel, v.node.technology, right - tx - used);
+    }
     const title = g
       .append('text')
       .attr('class', 'title')
@@ -474,7 +484,8 @@ export class Renderer {
       .attr('d', `M0 ${CARD.radius}a${CARD.radius} ${CARD.radius} 0 0 1 ${CARD.radius} -${CARD.radius}h${d.w - 2 * CARD.radius}a${CARD.radius} ${CARD.radius} 0 0 1 ${CARD.radius} ${CARD.radius}v${TABLE.header - CARD.radius}h-${d.w}z`);
     const head = g.append('g').attr('transform', `translate(${TABLE.pad},${(TABLE.header - 18) / 2})`);
     icon(head, 'table', 18);
-    head.append('text').attr('class', 'table-title').attr('x', 26).attr('y', 14).text(v.node.label);
+    const title = head.append('text').attr('class', 'table-title').attr('x', 26).attr('y', 14).text(v.node.label);
+    if (v.node.technology) technology(title, v.node.technology, d.w - 2 * TABLE.pad - 26 - measure(v.node.label, 14, 600));
     if (!v.node.fields?.length) {
       g.append('text').attr('class', 'table-empty').attr('x', d.w / 2).attr('y', TABLE.header + TABLE.row / 2 + 4).attr('text-anchor', 'middle').text('No columns yet');
     }
@@ -519,6 +530,17 @@ export class Renderer {
 }
 
 // ---------------------------------------------------------------- helpers
+
+// ` · Go` after a type or title, cut to fit `room` pixels and left out when there is no room for it.
+function technology(text: Sel, tech: string, room: number): void {
+  const sep = ' · ';
+  const avail = room - measure(sep, 10.5, 500);
+  if (avail < 28) return;
+  const full = tech.replace(/\s+/g, ' ').trim();
+  const [fitted] = wrap(full, 10.5, 500, avail, 1);
+  const span = text.append('tspan').attr('class', 'tech').text(`${sep}${fitted}`);
+  if (fitted !== full) span.append('title').text(full);
+}
 
 // A status set on the element itself; inherited ones are already on the container.
 function ownStatus(node: DiagramNode): Lifecycle | null {

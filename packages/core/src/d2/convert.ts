@@ -76,7 +76,10 @@ export function buildModel(res: CompileResponse, text: string): Built {
       if (stmt.kind === 'attr' && stmt.attr![0].toLowerCase() === 'near' && !stmt.mk.value.map) {
         nodes[id].near = boxText(stmt.mk.value);
       }
-      if (stmt.kind === 'attr' && isStatusAttr(stmt.attr!) && !stmt.mk.value.map) {
+      if (stmt.kind === 'attr' && isVar(stmt.attr!, 'technology') && !stmt.mk.value.map) {
+        nodes[id].technology = boxText(stmt.mk.value).trim() || undefined; // the last one wins
+      }
+      if (stmt.kind === 'attr' && isVar(stmt.attr!, 'status') && !stmt.mk.value.map) {
         const value = boxText(stmt.mk.value).trim().toLowerCase() as Lifecycle;
         if (LIFECYCLES.includes(value)) ownStatus.set(id, value);
         else {
@@ -148,9 +151,9 @@ export function buildModel(res: CompileResponse, text: string): Built {
   };
 }
 
-// `vars: {status: …}` inside an element's block, or `x.vars: {status: …}`.
-function isStatusAttr(attr: string[]): boolean {
-  return attr.length === 2 && attr[0].toLowerCase() === 'vars' && attr[1].toLowerCase() === 'status';
+// `vars: {<name>: …}` inside an element's block, or `x.vars: {<name>: …}`.
+function isVar(attr: string[], name: string): boolean {
+  return attr.length === 2 && attr[0].toLowerCase() === 'vars' && attr[1].toLowerCase() === name;
 }
 
 function edgeOf(c: Connection, range: SourceRange): DiagramEdge {

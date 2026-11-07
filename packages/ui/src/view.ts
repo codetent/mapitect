@@ -10,6 +10,12 @@ export interface ViewState {
   focus: string | null;
   collapsed: Set<string>;
   hidden?: Set<Lifecycle>; // statuses filtered out; elements without one count as live
+  hiddenTech?: Set<string>; // technologies filtered out, by techKey; '' is "no technology"
+}
+
+// How the technology filter groups elements: case and spacing don't matter, '' means none.
+export function techKey(node: DiagramNode): string {
+  return node.technology?.replace(/\s+/g, ' ').trim().toLowerCase() ?? '';
 }
 
 export interface VNode {
@@ -78,16 +84,18 @@ export function isWithin(model: DiagramModel, id: string, ancestor: string): boo
   return false;
 }
 
-// Whether the status filter keeps an element: its own status is shown, or a
-// descendant's is, so the container stays as structure around it.
-function statusFilter(model: DiagramModel, hidden: Set<Lifecycle> | undefined): (id: string) => boolean {
-  if (!hidden?.size) return () => true;
+// Whether the filters keep an element: its own status and technology are shown, or a
+// descendant is kept, so the container stays as structure around it.
+function viewFilter(model: DiagramModel, state: ViewState): (id: string) => boolean {
+  const { hidden, hiddenTech } = state;
+  if (!hidden?.size && !hiddenTech?.size) return () => true;
+  const shown = (node: DiagramNode) => !hidden?.has(node.status ?? 'live') && !hiddenTech?.has(techKey(node));
   const memo = new Map<string, boolean>();
   const keep = (id: string): boolean => {
     let k = memo.get(id);
     if (k === undefined) {
       const node = model.nodes[id];
-      k = !!node && (!hidden.has(node.status ?? 'live') || node.children.some(keep));
+      k = !!node && (shown(node) || node.children.some(keep));
       memo.set(id, k);
     }
     return k;
@@ -96,7 +104,7 @@ function statusFilter(model: DiagramModel, hidden: Set<Lifecycle> | undefined): 
 }
 
 export function buildView(model: DiagramModel, state: ViewState): VisibleGraph {
-  const keep = statusFilter(model, state.hidden);
+  const keep = viewFilter(model, state);
   const focus = state.focus && model.nodes[state.focus]?.children.length && keep(state.focus) ? state.focus : null;
   const nodes = new Map<string, VNode>();
   const touched = new Set<string>();

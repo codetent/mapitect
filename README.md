@@ -60,13 +60,14 @@ The [example](examples/platform.d2) is a small online bookshop that uses every f
 - **Search** and a model tree of the whole hierarchy
 - **Selection highlighting** that traces an element's connections
 - **Status filter** to show the current state, the target state or only what changes
+- **Technology filter** to show only what is built with a given stack, or what has no technology yet
 
 </td>
 <td width="50%" valign="top">
 
 ### ✏️ Edit
 - **Rename** elements and connection labels inline (`F2` or double-click)
-- **Details panel** for description, link, type, lifecycle status and fill color
+- **Details panel** for description, technology, link, type, lifecycle status and fill color
 - **Layout direction** right / down / left / up, written back to the file
 - **Undo / redo** for visual edits
 - Structure stays in the code: adding or rewiring elements is done in the `.d2` file

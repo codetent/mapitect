@@ -102,7 +102,8 @@ function tableSize(v: VNode): { w: number; h: number } {
   const fields = v.node.fields ?? [];
   const nameW = Math.max(...fields.map((f) => measure(f.name, 12.5, 500)), 0);
   const typeW = Math.max(...fields.map((f) => measure(f.type, 12, 400)), 0);
-  const titleW = measure(v.node.label, 14, 600) + 40;
+  const tech = v.node.technology ? Math.min(200, measure(` · ${v.node.technology}`, 10.5, 500)) : 0; // drawn after the title
+  const titleW = measure(v.node.label, 14, 600) + 40 + tech;
   const w = Math.max(220, titleW + TABLE.pad * 2, nameW + typeW + 34 + 40 + TABLE.pad * 2);
   return { w: Math.ceil(w), h: TABLE.header + Math.max(1, fields.length) * TABLE.row + 6 };
 }

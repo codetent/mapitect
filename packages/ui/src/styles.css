@@ -1211,6 +1211,18 @@ g.btn:hover .glyph {
   fill: var(--accent);
 }
 
+/* The technology after a type, group meta or table title: as written, not in caps. */
+.tech {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  fill: var(--muted);
+}
+
+[data-tone='on-dark'] .tech {
+  fill: rgb(255 255 255 / 0.66);
+}
+
 .title {
   font: 600 14px var(--font);
   fill: var(--fg);
@@ -2260,6 +2272,20 @@ body.theme-light {
 
 .filter-options {
   min-width: 200px;
+  max-width: 280px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.filter-options .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-options .label.muted {
+  font-style: italic;
 }
 
 .menu-title {
@@ -2298,6 +2324,7 @@ body.theme-light {
 
 .filter-groups .count,
 .filter-options .count {
+  white-space: nowrap;
   font-size: 11px;
   color: var(--faint);
 }

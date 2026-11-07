@@ -38,6 +38,7 @@ export interface DiagramNode {
   fields?: TableField[]; // sql_table / class shapes
   status?: Lifecycle; // set on the element or inherited from an ancestor
   statusFrom?: string; // the ancestor it is inherited from
+  technology?: string; // freetext from `vars: {technology: …}`, e.g. "Go" or "PostgreSQL 16"
   range: SourceRange;
 }
 
@@ -69,6 +70,7 @@ export type EditOp =
   | { op: 'setAttr'; id: string; attr: string[]; value: string | null } // tooltip, link, shape, icon, style.*
   | { op: 'setEdgeLabel'; id: string; label: string }
   | { op: 'setStatus'; id: string; value: Lifecycle | null } // `vars: {status: …}`; null inherits
+  | { op: 'setTechnology'; id: string; value: string | null } // `vars: {technology: …}`; null removes it
   | { op: 'setDirection'; value: Direction }; // the board's layout direction
 
 export interface TextEdit {

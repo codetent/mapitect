@@ -45,7 +45,7 @@ The preview lets you change text and the look of elements. The structure stays i
 Here is what you can edit:
 
 - Rename an element, a group title or a connection label by double-clicking it or pressing `F2`.
-- In the details panel, edit an element's name, description (`tooltip`), link and [lifecycle status](#lifecycle-status), choose its type (service, actor, gateway, data store, queue or cloud service) or set a fill color. For a connection you can edit the label. Other D2 shapes are displayed correctly, but you set them in code.
+- In the details panel, edit an element's name, description (`tooltip`), [technology](#technology), link and [lifecycle status](#lifecycle-status), choose its type (service, actor, gateway, data store, queue or cloud service) or set a fill color. For a connection you can edit the label. Other D2 shapes are displayed correctly, but you set them in code.
 - Right-click an element or connection for *Rename* or *Edit label*, *Go to source* and navigation commands.
 - The arrow button in the toolbar cycles the layout direction through right, down, left and up, and stores it as `direction:` in the file.
 - `⌘Z` and `⇧⌘Z` undo and redo edits made in the preview. If you have typed in the file since, use the editor's own undo instead.
@@ -80,6 +80,28 @@ A status applies to the element and everything inside it, so marking a system `f
 In the details panel, the *Status* buttons set the status. Picking the status an element would inherit anyway removes its own `status`, together with its `vars` block if nothing else is in it.
 
 Once a diagram uses statuses, the toolbar gets a status filter. Uncheck statuses to hide their elements: hide *Deprecated* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
+
+## Technology
+
+Say what an element is built with in its `vars`. The value is free text:
+
+```d2
+shop: Bookshop {
+  catalog: Catalog Service {
+    vars: {technology: Go}
+  }
+  db: Database {
+    shape: cylinder
+    vars: {technology: PostgreSQL 16; status: deprecated}
+  }
+}
+```
+
+The technology is shown after the element's type on cards, in group headers and after a table's name, cut short with an ellipsis when it doesn't fit. Unlike a status, it belongs to the element alone and is not passed on to what is inside it. Search finds elements by their technology too.
+
+In the details panel, the *Technology* field sets it. Clearing the field removes `technology`, together with its `vars` block if nothing else is in it.
+
+Once a diagram uses technologies, the filter menu in the bottom-left bar gets a *Technology* group. It lists every technology from A to Z, ignoring case and spacing, and *Unspecified* for elements without one. Uncheck a technology to hide its elements, or uncheck *Unspecified* to see only what has a technology. It combines with the status filter: an element is shown only if both let it through. As with statuses, a container stays visible while anything inside it is shown.
 
 ## Architecture decisions
 
