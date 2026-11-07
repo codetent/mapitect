@@ -2,7 +2,7 @@
 
 An interactive preview for [D2](https://d2lang.com) architecture diagrams in VS Code.
 
-mapitect opens a `.d2` file as a map you can zoom, pan and drill into. Large diagrams start at the top level, and you expand the parts you care about. You can rename elements and change their description, link, type and color in the preview, and mapitect writes those changes back to the `.d2` file. If you keep architecture decision records in MADR format, each element also shows the decisions that belong to it.
+mapitect opens a `.d2` file as a map you can zoom, pan and drill into. Large diagrams start at the top level, and you expand the parts you care about. You can rename elements and change their description, technology, link, lifecycle status, type and color in the preview, and mapitect writes those changes back to the `.d2` file. Mark what is planned or on its way out, say what each part is built with, and filter the map by either. If you keep architecture decision records in MADR format, each element also shows the decisions that belong to it.
 
 The file is parsed by the official D2 compiler ([`@d2lang/d2`](https://www.npmjs.com/package/@d2lang/d2), the WASM build of D2), so the preview understands the same syntax as the `d2` CLI, including classes, vars, globs and imports.
 
@@ -18,19 +18,20 @@ Compiler errors appear in the Problems panel, and the preview keeps showing the 
 
 Drag the canvas to pan. Zoom with the mouse wheel, a trackpad pinch, `+` and `-`, or the zoom bar. On a trackpad, two-finger scrolling pans instead of zooming (the `mapitect.wheel` setting changes this). `F` fits the whole diagram on screen and `1` resets the zoom to 100%.
 
-A new preview opens at *Level 1*, which shows only the top-level elements. The *Level 1 / 2 / 3 / All* switcher in the toolbar expands deeper levels. You can also collapse or expand a single container with its corner button or with `[` and `]`. When a container is collapsed, the connections to the elements inside it are merged into one dashed connection with a combined label.
+A new preview opens at *Level 1*, which shows only the top-level elements. The *Level 1 / 2 / 3 / All* switcher in the bar at the bottom left expands deeper levels. You can also collapse or expand a single container with its corner button, with `[` and `]`, or by clicking the "items inside" chip on a collapsed card. When a container is collapsed, the connections to the elements inside it are merged into one dashed connection with a combined label.
 
 To focus on one part of the system, double-click a container. mapitect then shows only its contents, plus the outside elements it talks to as dashed context cards. It works much like moving down a level in a C4 model. The breadcrumbs, `Esc` or `Backspace` take you back up.
 
 A few more things help with larger diagrams:
 
 - Clicking an element highlights its connections and dims everything else. The arrow keys move the selection to the nearest element in that direction.
-- The details panel shows the selected element's description (`tooltip`), link, connections and children. Every entry in it is clickable.
+- The details panel shows the selected element's description (`tooltip`), technology, lifecycle status, link, connections and children. Every entry in it is clickable. Cards with a `link` show a link mark in their corner that opens it.
+- The filter button in the bottom-left bar hides elements by [lifecycle status](#lifecycle-status) or [technology](#technology).
 - The sidebar contains a tree of the whole model, with each element's children under *Components* and its decision records under *ADRs*. It starts collapsed. Open it with the button at the top left, or press `/` or `Cmd+F` to search, and `Enter` to jump to the first match.
 - As you zoom out, descriptions and labels fade and group names get larger, so a big map stays readable.
 - The minimap is hidden by default. Press `M` or use the map button to show it, then click or drag inside it to move around.
 
-To save the diagram as an image, run *mapitect: Export Diagram as SVG* or *Export Diagram as PNG* from the Command Palette. The preview follows your VS Code theme, including the high-contrast themes.
+To save the diagram as an image, use the export button in the toolbar at the top right, or run *mapitect: Export Diagram as SVG* or *Export Diagram as PNG* from the Command Palette. The reload button next to it reads the diagram and its decision records from disk again. The preview follows your VS Code theme, including the high-contrast themes.
 
 ## Diagram and source side by side
 
@@ -46,11 +47,10 @@ Here is what you can edit:
 
 - Rename an element, a group title or a connection label by double-clicking it or pressing `F2`.
 - In the details panel, edit an element's name, description (`tooltip`), [technology](#technology), link and [lifecycle status](#lifecycle-status), choose its type (service, actor, gateway, data store, queue or cloud service) or set a fill color. For a connection you can edit the label. Other D2 shapes are displayed correctly, but you set them in code.
-- Right-click an element or connection for *Rename* or *Edit label*, *Go to source* and navigation commands.
-- The arrow button in the toolbar cycles the layout direction through right, down, left and up, and stores it as `direction:` in the file.
+- Right-click an element or connection for *Rename* or *Edit label*, *Go to source*, *New decision…* and navigation commands.
 - `⌘Z` and `⇧⌘Z` undo and redo edits made in the preview. If you have typed in the file since, use the editor's own undo instead.
 
-Editing is paused while the file has compile errors, because the source positions might be out of date. The layout is always automatic, so elements can't be moved by hand.
+Editing is paused while the file has compile errors, because the source positions might be out of date. The layout is always automatic, so elements can't be moved by hand. It flows in the direction set by `direction:` at the top of the file (`right`, `down`, `left` or `up`).
 
 ## Lifecycle status
 
@@ -79,7 +79,7 @@ A status applies to the element and everything inside it, so marking a system `f
 
 In the details panel, the *Status* buttons set the status. Picking the status an element would inherit anyway removes its own `status`, together with its `vars` block if nothing else is in it.
 
-Once a diagram uses statuses, the toolbar gets a status filter. Uncheck statuses to hide their elements: hide *Deprecated* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
+Once a diagram uses statuses, the filter menu in the bottom-left bar gets a *Status* group. Uncheck statuses to hide their elements: hide *Deprecated* to see the target architecture, hide *Future* for today's, or hide *Live* to see only what changes. A container stays visible while anything inside it is shown, and connections to hidden elements are left out.
 
 ## Technology
 
@@ -164,6 +164,15 @@ Each element type has its own icon and accent color. This covers actors (`person
 | `[` `]` | Collapse / expand the selected container |
 | `/`, `Cmd+F` | Search |
 | `M` | Show or hide the minimap |
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| *mapitect: Open Interactive Preview to the Side* | Open the preview beside the editor (`Cmd+K V` / `Ctrl+K V`, or the button in the editor title bar) |
+| *mapitect: Open Interactive Preview* | Open the preview in the current editor group |
+| *mapitect: Export Diagram as SVG* / *as PNG* | Save the diagram, as currently expanded and filtered, as an image |
+| *mapitect: Fit Diagram to Screen* | Fit the whole diagram into the preview |
 
 ## Settings
 
