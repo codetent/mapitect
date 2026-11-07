@@ -14,7 +14,7 @@ and read the decisions behind every component, without leaving your editor.
 
 <br>
 
-<img src="docs/images/overview.png" alt="mapitect showing the example bookshop architecture: the API Gateway is selected, its connections are highlighted, and the details panel lists its type, color, two architecture decisions and outgoing connections" width="100%">
+<img src="docs/images/overview.png" alt="mapitect drilled into the Backend of the example bookshop: the Catalog Service is selected, its connections are highlighted, and the details panel shows its description, technology (Go), lifecycle status, type, two architecture decisions and outgoing connections" width="100%">
 
 </div>
 
@@ -101,7 +101,7 @@ The [example](examples/platform.d2) is a small online bookshop that uses every f
 <br>
 
 <div align="center">
-<img src="docs/images/decisions.png" alt="The decision reader showing ADR-0001, 'One API gateway in front of all services', next to the selected API Gateway in the map" width="100%">
+<img src="docs/images/decisions.png" alt="The decision reader showing ADR-0002, 'Search with PostgreSQL full-text search', next to the selected Catalog Service in the map" width="100%">
 <br><sub>The decision reader: the record behind the selected component, next to the map.</sub>
 </div>
 

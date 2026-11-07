@@ -6,7 +6,7 @@ mapitect opens a `.d2` file as a map you can zoom, pan and drill into. Large dia
 
 The file is parsed by the official D2 compiler ([`@d2lang/d2`](https://www.npmjs.com/package/@d2lang/d2), the WASM build of D2), so the preview understands the same syntax as the `d2` CLI, including classes, vars, globs and imports.
 
-<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/overview.png" alt="mapitect showing the example bookshop architecture: the API Gateway is selected, its connections are highlighted, and the details panel lists its type, color, two architecture decisions and outgoing connections" width="100%">
+<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/overview.png" alt="mapitect drilled into the Backend of the example bookshop: the Catalog Service is selected, its connections are highlighted, and the details panel shows its description, technology (Go), lifecycle status, type, two architecture decisions and outgoing connections" width="100%">
 
 ## Getting started
 
@@ -113,7 +113,7 @@ vars: {
 }
 ```
 
-<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/decisions.png" alt="The decision reader showing ADR-0001, 'One API gateway in front of all services', next to the selected API Gateway in the map" width="100%">
+<img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/decisions.png" alt="The decision reader showing ADR-0002, 'Search with PostgreSQL full-text search', next to the selected Catalog Service in the map" width="100%">
 
 Inside each folder, a component gets its own subfolder named after the element, with its ADR files in it:
 
