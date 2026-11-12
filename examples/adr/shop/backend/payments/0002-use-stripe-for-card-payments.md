@@ -2,6 +2,7 @@
 status: accepted
 date: 2025-02-25
 decision-makers: Checkout team
+components: [shop.backend.payments]
 ---
 
 # Use Stripe for card payments

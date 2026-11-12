@@ -2,6 +2,7 @@
 status: accepted
 date: 2025-03-11
 decision-makers: Platform team
+components: [gateway]
 ---
 
 # One API gateway in front of all services

@@ -11,6 +11,7 @@ import {
   type HostMessage,
   type HostShell,
   type PreviewConfig,
+  type Problem,
   type Severity,
   type SourceRange,
   type TextEdit,
@@ -47,7 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
       doc.text.uri,
       state.issues.map((issue) => {
         const d = new vscode.Diagnostic(toRange(issue.range), issue.message, SEVERITY[issue.severity]);
-        d.source = 'd2';
+        d.source = issue.source ?? 'd2';
         return d;
       }),
     );
@@ -240,6 +241,8 @@ class Preview implements HostShell {
     overviewRulerLane: vscode.OverviewRulerLane.Full,
   });
   private highlighted: vscode.Range | undefined;
+  // Problems in the decision records and from drawing, while the preview is open.
+  private readonly diagnostics = vscode.languages.createDiagnosticCollection('mapitect');
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -254,6 +257,7 @@ class Preview implements HostShell {
     panel.onDidDispose(() => {
       this.selection.dispose();
       this.session.dispose();
+      this.diagnostics.dispose();
     });
   }
 
@@ -353,6 +357,18 @@ class Preview implements HostShell {
     watcher.onDidChange(onChange);
     watcher.onDidDelete(onChange);
     return watcher;
+  }
+
+  problems(problems: Problem[]): void {
+    const byFile = new Map<string, vscode.Diagnostic[]>();
+    for (const p of problems) {
+      const d = new vscode.Diagnostic(toRange(p.range), p.message, SEVERITY[p.severity]);
+      d.source = 'mapitect';
+      d.code = p.source;
+      byFile.set(p.file, [...(byFile.get(p.file) ?? []), d]);
+    }
+    this.diagnostics.clear();
+    for (const [file, list] of byFile) this.diagnostics.set(toUri(file), list);
   }
 
   // ---------------------------------------------------------------- html

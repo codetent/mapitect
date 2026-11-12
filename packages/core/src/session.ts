@@ -1,16 +1,18 @@
 // One open preview of a diagram: answers the UI's messages, applies visual
-// edits with their own undo history, loads the diagram's ADRs and sends the
-// UI fresh models. Everything host-specific goes through HostShell.
+// edits with their own undo history, loads the diagram's ADRs, collects the
+// problems found in them and while drawing, and sends the UI fresh models.
+// Everything host-specific goes through HostShell.
 
-import { assignAdrs, planNewAdr, scanAdrFolders, type AdrFolder } from './adr.ts';
+import { indexAdrs, planNewAdr, scanAdrs, type AdrScan } from './adr.ts';
 import type { DocState, CompileCache } from './compile-cache.ts';
 import { EditError, planEdit } from './d2/edits.ts';
-import type { DiagramModel, EditOp } from './model.ts';
+import type { AdrIndex, DiagramModel, EditOp, Problem, SourceRange } from './model.ts';
 import { basename, dirname, isWithin, normalize, resolve } from './path.ts';
 import type { DiagramDocument, Disposable, FileSystem, HostShell } from './ports.ts';
-import type { HostMessage, UiMessage } from './protocol.ts';
+import type { HostMessage, RenderProblem, UiMessage } from './protocol.ts';
 
 const EMPTY: DiagramModel = { direction: 'down', nodes: {}, roots: [], edges: [], issues: [], lineIndex: {} };
+const LINE_0: SourceRange = { line: 0, col: 0, endLine: 0, endCol: 0 };
 
 export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
   private ready = false;
@@ -18,12 +20,16 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
   // Visual edits as whole-text snapshots; only replayed while the text still matches.
   private readonly history: { before: string; after: string }[] = [];
   private readonly future: { before: string; after: string }[] = [];
-  // ADR folders under the roots named in `vars.adr-folders`, reloaded when those
+  // ADRs under the roots named in `vars.adr-folders`, reloaded when those
   // roots change or Markdown files in them do.
   private adrRoots: string[] = [];
-  private adrFolders: AdrFolder[] = [];
+  private adrScan: AdrScan = { files: [], missingRoots: [] };
   private adrWatchers: Disposable[] = [];
   private adrReload: ReturnType<typeof setTimeout> | undefined;
+  // Problems from drawing: what the UI reported, and whether local icon files exist.
+  private renderProblems: RenderProblem[] = [];
+  private readonly iconExists = new Map<string, boolean | 'checking'>();
+  private lastProblems = '[]';
   readonly document: D;
   private readonly cache: CompileCache<D>;
   private readonly fs: FileSystem;
@@ -54,14 +60,81 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
     const roots = state.built?.adrFolders ?? [];
     if (!sameList(roots, this.adrRoots)) return void this.loadAdrs(roots); // updates again once scanned
     const model = state.built ? this.resolveIcons(state.built.model) : EMPTY;
+    const { adrs, problems } = this.collect(state);
     this.post({
       type: 'update',
       uri: this.document.id,
       fileName: this.fileName,
       model: { ...model, issues: state.issues, valid: state.ok },
-      adrs: assignAdrs(this.adrFolders, model, this.adrRoots),
+      adrs,
+      problems,
       config: this.shell.config(),
     });
+    this.publish(problems);
+  }
+
+  // The decisions per element, and every problem outside the compiler's.
+  private collect(state: DocState | undefined): { adrs: AdrIndex; problems: Problem[] } {
+    const built = state?.built;
+    const { index, problems } = indexAdrs(this.adrScan, built?.model ?? EMPTY, this.adrRoots);
+    const diagram = this.document.path;
+    for (const root of this.adrScan.missingRoots) {
+      problems.push({
+        file: diagram,
+        severity: 'warning',
+        message: `The ADR folder ${root} does not exist`,
+        range: built?.adrFolderRanges[root] ?? LINE_0,
+        source: 'decisions',
+      });
+    }
+    problems.push(...this.drawingProblems(built?.model));
+    return { adrs: index, problems };
+  }
+
+  private drawingProblems(model: DiagramModel | undefined): Problem[] {
+    if (!model) return [];
+    const problems: Problem[] = [];
+    const add = (message: string, severity: Problem['severity'], range = LINE_0) =>
+      problems.push({ file: this.document.path, message, severity, range, source: 'render' });
+    const missing = new Set<string>();
+    for (const node of Object.values(model.nodes)) {
+      const file = localIcon(node.icon) && resolve(this.dir, node.icon!);
+      if (!file) continue;
+      const known = this.iconExists.get(file);
+      if (known === undefined) this.checkIcon(file);
+      else if (known === false) {
+        missing.add(node.id);
+        add(`The icon ${node.icon} does not exist`, 'warning', node.range);
+      }
+    }
+    for (const p of this.renderProblems) {
+      if (p.kind === 'layout') add(`The diagram could not be laid out: ${p.message}`, 'error');
+      else if (model.nodes[p.id] && !missing.has(p.id)) add(`The icon ${model.nodes[p.id].icon} could not be loaded`, 'warning', model.nodes[p.id].range);
+    }
+    return problems;
+  }
+
+  // Checks once whether a local icon exists, and reports again when it doesn't.
+  private checkIcon(file: string): void {
+    this.iconExists.set(file, 'checking');
+    void this.fs.exists(file).then((exists) => {
+      this.iconExists.set(file, exists);
+      if (!exists) this.republish();
+    });
+  }
+
+  // Problems changed without the diagram changing: tell the UI and the host.
+  private republish(): void {
+    const { problems } = this.collect(this.cache.get(this.document));
+    this.post({ type: 'problems', problems });
+    this.publish(problems);
+  }
+
+  private publish(problems: Problem[]): void {
+    const json = JSON.stringify(problems);
+    if (json === this.lastProblems) return;
+    this.lastProblems = json;
+    this.shell.problems?.(problems);
   }
 
   // The editor's cursor moved to `line`: point out the element declared there.
@@ -92,8 +165,15 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
       case 'navigate':
         return this.shell.showSource(msg.range);
       case 'openFile':
-        if (this.mayOpen(msg.path)) this.shell.openFile(msg.path, 'beside');
+        if (normalize(msg.path) === normalize(this.document.path)) return this.shell.showSource(msg.range ?? LINE_0);
+        if (!this.mayOpen(msg.path)) return;
+        if (msg.range) return this.shell.editFile(msg.path, msg.range);
+        this.shell.openFile(msg.path, 'beside');
         return;
+      case 'renderProblems':
+        if (JSON.stringify(msg.problems) === JSON.stringify(this.renderProblems)) return;
+        this.renderProblems = msg.problems;
+        return this.republish();
       case 'openLink':
         if (/^[a-z][a-z0-9+.-]*:/i.test(msg.url)) this.shell.openExternal(msg.url);
         else this.shell.openFile(resolve(this.dir, msg.url), 'main');
@@ -106,10 +186,12 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
   dispose(): void {
     for (const w of this.adrWatchers) w.dispose();
     clearTimeout(this.adrReload);
+    this.publish([]);
   }
 
   // Re-read everything from disk: the diagram with its imports, and the ADR folders.
   private async reload(): Promise<void> {
+    this.iconExists.clear();
     await this.cache.refresh(this.document, true);
     await this.loadAdrs();
     this.toast('Reloaded');
@@ -121,9 +203,9 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
       this.adrRoots = roots;
       this.watchAdrs(roots.map((r) => resolve(base, r)));
     }
-    const folders = await scanAdrFolders(this.fs, base, roots);
+    const scan = await scanAdrs(this.fs, base, roots);
     if (roots !== this.adrRoots) return; // the variable changed while scanning
-    this.adrFolders = folders;
+    this.adrScan = scan;
     const state = this.cache.get(this.document);
     if (state) this.update(state);
   }
@@ -143,34 +225,38 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
     const target = normalize(file);
     if (isWithin(this.dir, target)) return true;
     if (this.shell.workspaceRoots().some((root) => isWithin(root, target))) return true;
-    return this.adrFolders.some((f) => f.adrs.some((a) => normalize(a.file) === target));
+    return this.adrScan.files.some((f) => normalize(f.adr.file) === target);
   }
 
   private toast(message: string): void {
     this.post({ type: 'toast', message });
   }
 
-  // Asks for a title, writes the element's next MADR file and opens it next to the diagram.
-  private async newDecision(id: string): Promise<void> {
-    const model = this.cache.get(this.document)?.built?.model;
-    const node = model?.nodes[id];
-    if (!model || !node) return;
+  // Asks for a title, writes the next MADR file for the element (or a system-wide
+  // one when `id` is null) and opens it next to the diagram.
+  private async newDecision(id: string | null): Promise<void> {
+    const state = this.cache.get(this.document);
+    const model = state?.built?.model;
+    const node = id === null ? null : model?.nodes[id];
+    if (!model || node === undefined) return;
     if (!this.adrRoots.length) return this.toast("Add adr-folders to the file's vars to record decisions");
     const title = (
       await this.shell.askText({
-        title: `New decision for ${node.label.split('\n')[0]}`,
+        title: node ? `New decision for ${node.label.split('\n')[0]}` : 'New system-wide decision',
         prompt: 'What was decided?',
         placeholder: 'Use Stripe for card payments',
         required: 'Enter a title',
       })
     )?.trim();
     if (!title) return;
+    const { index } = indexAdrs(this.adrScan, model, this.adrRoots);
     const plan = planNewAdr({
       baseDir: this.dir,
       roots: this.adrRoots,
       model,
       id,
-      existing: assignAdrs(this.adrFolders, model, this.adrRoots).components[id] ?? [],
+      existing: id === null ? index.system : (index.components[id] ?? []),
+      all: this.adrScan.files.map((f) => f.adr),
       title,
       date: today(),
     });
@@ -229,11 +315,16 @@ export class DiagramSession<D extends DiagramDocument = DiagramDocument> {
   private resolveIcons(model: DiagramModel): DiagramModel {
     const nodes = { ...model.nodes };
     for (const [id, node] of Object.entries(nodes)) {
-      if (!node.icon || /^(https?:|data:)/i.test(node.icon)) continue;
-      nodes[id] = { ...node, icon: this.shell.assetUrl(resolve(this.dir, node.icon)) };
+      if (!localIcon(node.icon)) continue;
+      nodes[id] = { ...node, icon: this.shell.assetUrl(resolve(this.dir, node.icon!)) };
     }
     return { ...model, nodes };
   }
+}
+
+// Icons that resolveIcons treats as files next to the diagram.
+function localIcon(icon: string | undefined): boolean {
+  return !!icon && !/^(https?:|data:)/i.test(icon);
 }
 
 function sameList(a: string[], b: string[]): boolean {

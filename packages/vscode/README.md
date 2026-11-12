@@ -115,32 +115,47 @@ vars: {
 
 <img src="https://raw.githubusercontent.com/codetent/mapitect/main/docs/images/decisions.png" alt="The decision reader showing ADR-0002, 'Search with PostgreSQL full-text search', next to the selected Catalog Service in the map" width="100%">
 
-Inside each folder, a component gets its own subfolder named after the element, with its ADR files in it:
+Each decision names the elements it applies to in a `components` entry of its metadata. Use an element's full id, or its key when no other element has the same one. A decision can apply to several elements, and one that names none applies to the whole system:
 
-```
-platform.d2
-adr/
-  gateway/                     # matches the element whose key is "gateway"
-    0001-single-api-gateway.md
-    0002-rest-between-gateway-and-services.md
-  shop.services.orders/        # or the element's full id
-  shop/services/payments/      # or a path mirroring the diagram's nesting
-../shared/decisions/
-  gateway/                     # decisions from every folder are merged per element
-    0001-rate-limits.md
+```markdown
+---
+status: accepted
+date: 2025-05-06
+components: [shop.backend.orders, payments]
+---
+
+# Check stock before taking payment
 ```
 
-Elements with decisions get a badge with the number of records, and groups show the count in their header. The details panel lists an element's decisions with number, title and status. Click a decision or a badge to open it in the decision reader, which also shows the date and the decision-makers. Use `←` and `→` to step through the component's decisions. Links between ADRs open in the reader as well.
+In MADR 2 files, write it as a bullet under the title: `* Components: shop.backend.orders, payments`. How you arrange the files inside the folders is up to you; subfolders are searched up to five levels deep, and decisions from every folder are merged.
 
-To write a new decision, right-click an element and choose *New decision…*, or click the `+` next to *Decisions* in the details panel. mapitect asks for a title, creates the next numbered MADR file with `status: proposed` and today's date, and opens it in the editor. The file goes next to the element's existing decisions (in the first folder that has any) and gets the number after the highest one there. For an element without decisions, mapitect creates a new folder in the first `adr-folders` entry. It is named after the element's key, or after its full id if another element has the same key.
+Elements with decisions get a badge with the number of records, and groups show the count in their header. The details panel lists an element's decisions with number, title and status. Click a decision or a badge to open it in the decision reader, which also shows the date, the decision-makers and every element the decision applies to. Click one of those elements to read the decision next to it. Use `←` and `→` to step through the component's decisions. Links between ADRs open in the reader as well.
+
+The sidebar's tree starts with two folders, like the ones under each element: *Components* holds the top-level elements, and *ADRs* the system-wide decisions. These are also in the menu you get by right-clicking the empty canvas.
+
+To write a new decision, right-click an element and choose *New decision…*, or click the `+` next to *Decisions* in the details panel. For a system-wide one, right-click the empty canvas and choose *New system-wide decision…*. mapitect asks for a title, creates the next numbered MADR file with `status: proposed`, today's date and the element in `components`, and opens it in the editor. The file goes next to the element's existing decisions (in the first folder that has any), or straight into the first `adr-folders` entry, and gets the number after the highest one in that folder.
 
 A few more details:
 
-- mapitect reads MADR 3 and 4 YAML front matter (`status`, `date`, `decision-makers`, `consulted`, `informed`) as well as the MADR 2 bullet style (`* Status: …`). Statuses are shown as accepted, proposed, rejected, deprecated or superseded.
-- The preview updates when you add or edit Markdown files or change `adr-folders`. Folders that don't match any element are listed in the sidebar footer.
+- mapitect reads MADR 3 and 4 YAML front matter (`status`, `date`, `decision-makers`, `consulted`, `informed`, `components`) as well as the MADR 2 bullet style (`* Status: …`). Statuses are shown as accepted, proposed, rejected, deprecated or superseded.
+- The preview updates when you add or edit Markdown files or change `adr-folders`.
 - Without `adr-folders`, mapitect doesn't look for decisions at all. `README.md`, `index.md`, `template.md` and files whose names start with `.` or `_` are ignored.
 
 The [`examples`](https://github.com/codetent/mapitect/tree/main/examples) folder in the repository has a sample diagram with 9 decisions in `adr` and `adr-shared`.
+
+### Upgrading from folder names
+
+Earlier versions of mapitect used the name of the folder an ADR was in to choose its element. That no longer links anything: a decision without `components` is system-wide. While the preview is open, mapitect marks each such file whose folder name matches an element with a hint in the Problems panel that names the `components` entry to add.
+
+## Problems
+
+Compile errors and warnings appear in the Problems panel for every open `.d2` file. While a preview is open, mapitect also reports, with `mapitect` as the source:
+
+- **Decisions:** `components` entries that match no element or several, unknown or missing statuses, dates not written as `YYYY-MM-DD`, numbers used twice in a folder, links to files that don't exist, and `adr-folders` entries that don't exist. These point at the line in the ADR file or the `.d2` file.
+- **Drawing:** icons that don't exist or can't be loaded, and a layout that failed.
+- **What isn't drawn:** `width`, `height`, `top`, `left` and grid settings, and `layers`, `scenarios` and `steps`, as information.
+
+The footer of the sidebar counts the errors and warnings. Click it to go to the first one.
 
 ## Supported D2
 

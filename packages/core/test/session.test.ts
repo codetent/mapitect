@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { CompileCache } from '../src/compile-cache.ts';
 import { D2Compiler } from '../src/d2/compiler.ts';
 import { applyEdits } from '../src/d2/edits.ts';
-import type { TextEdit } from '../src/model.ts';
+import type { Problem, TextEdit } from '../src/model.ts';
 import { dirname, join } from '../src/path.ts';
 import type { DiagramDocument, FileSystem, HostShell } from '../src/ports.ts';
 import type { HostMessage } from '../src/protocol.ts';
@@ -86,6 +86,7 @@ function setup(text: string, files: Record<string, string> = {}) {
       calls.push(['watch', dir, glob]);
       return { dispose: () => void calls.push(['unwatch', dir]) };
     },
+    problems: (list) => void calls.push(['problems', list]),
   };
   const session = new DiagramSession(doc, cache, fs, shell);
   cache.onDidUpdate(({ state }) => session.update(state));
@@ -149,14 +150,20 @@ test('cursor sync posts each element once', async () => {
 });
 
 test('ADRs come from the folders in vars, are watched, and new decisions are written', async () => {
-  const adr = '/work/shop/adr/api/0001-use-rest.md';
-  const s = setup('vars: {\n  adr-folders: [adr; ../decisions]\n}\napi -> db\n', { [adr]: '# Use REST\n\nBody\n' });
+  const adr = '/work/shop/adr/0001-use-rest.md';
+  const aws = '/work/shop/adr/0002-run-on-aws.md';
+  const s = setup('vars: {\n  adr-folders: [adr; ../decisions]\n}\napi -> db\n', {
+    [adr]: '---\nstatus: accepted\ncomponents: [api, db]\n---\n# Use REST\n\nBody\n',
+    [aws]: '---\nstatus: accepted\n---\n# Run on AWS\n',
+  });
   await s.session.receive({ type: 'ready' });
   await s.settle();
   const update = s.updates().at(-1);
   assert.ok(update?.type === 'update');
   assert.deepEqual(update.adrs?.roots, ['adr', '../decisions']);
   assert.deepEqual(update.adrs?.components.api.map((a) => a.file), [adr]);
+  assert.deepEqual(update.adrs?.components.db.map((a) => a.file), [adr]);
+  assert.deepEqual(update.adrs?.system.map((a) => a.file), [aws]);
   assert.deepEqual(
     s.calls.filter((c) => c[0] === 'watch'),
     [
@@ -167,24 +174,73 @@ test('ADRs come from the folders in vars, are watched, and new decisions are wri
 
   s.answer('Version the API');
   await s.session.receive({ type: 'newDecision', id: 'api' });
-  const created = '/work/shop/adr/api/0002-version-the-api.md';
-  assert.match(s.files[created], /^---\nstatus: proposed\n/);
+  const created = '/work/shop/adr/0003-version-the-api.md';
+  assert.match(s.files[created], /^---\nstatus: proposed\n[\s\S]*\ncomponents: \[api\]\n---\n/);
   const edit = s.calls.find((c) => c[0] === 'editFile');
   assert.ok(edit);
   assert.equal(edit[1], created);
   assert.equal((edit[2] as { line: number }).line, s.files[created].split('\n').indexOf('## Context and Problem Statement') + 2);
 
+  await s.settle();
+  s.answer('Use one region');
+  await s.session.receive({ type: 'newDecision', id: null });
+  assert.doesNotMatch(s.files['/work/shop/adr/0004-use-one-region.md'], /components/, 'a system-wide decision');
+
   // Once the new file is scanned, the next one is numbered after it; an existing file is never overwritten.
   await s.settle();
-  s.files[join(dirname(created), '0003-version-the-api.md')] = 'taken';
-  await s.session.receive({ type: 'newDecision', id: 'api' });
-  assert.deepEqual(s.calls.at(-1), ['showError', '0003-version-the-api.md already exists']);
+  s.files[join(dirname(created), '0005-use-one-region.md')] = 'taken';
+  await s.session.receive({ type: 'newDecision', id: null });
+  assert.deepEqual(s.calls.at(-1), ['showError', '0005-use-one-region.md already exists']);
 
   s.session.dispose();
   assert.deepEqual(
     s.calls.filter((c) => c[0] === 'unwatch').map((c) => c[1]),
     ['/work/shop/adr', '/work/decisions'],
   );
+});
+
+test('problems in decisions and from drawing reach the host and the UI', async () => {
+  const s = setup('vars: {\n  adr-folders: [adr; missing]\n}\napi.icon: ./icons/gone.svg\napi -> db\ndb.width: 200\n', {
+    '/work/shop/adr/0001-a.md': '---\nstatus: accepted\ncomponents: [nope]\n---\n# A\n',
+  });
+  const reported = () => (s.calls.filter((c) => c[0] === 'problems').at(-1)?.[1] ?? []) as Problem[];
+  const brief = (list: Problem[]) => list.map((p) => [p.file, p.source, p.severity, p.message, p.range.line]);
+  await s.session.receive({ type: 'ready' });
+  await s.settle();
+  assert.deepEqual(brief(reported()), [
+    ['/work/shop/adr/0001-a.md', 'decisions', 'warning', 'No element "nope" in the diagram', 2],
+    ['/work/shop/diagram.d2', 'decisions', 'warning', 'The ADR folder missing does not exist', 1],
+    ['/work/shop/diagram.d2', 'render', 'warning', 'The icon ./icons/gone.svg does not exist', 3],
+  ]);
+  const update = s.updates().at(-1);
+  assert.ok(update?.type === 'update');
+  assert.deepEqual(
+    update.model.issues.map((i) => [i.source, i.severity, i.message, i.range.line]),
+    [['mapitect', 'info', 'mapitect lays out diagrams itself, so width is ignored', 5]],
+  );
+
+  // What the UI reports replaces what it reported before; the missing icon is reported once.
+  await s.session.receive({ type: 'renderProblems', problems: [{ kind: 'layout', message: 'boom' }, { kind: 'icon', id: 'api' }] });
+  const posted = s.posted.filter((m) => m.type === 'problems').at(-1);
+  assert.ok(posted?.type === 'problems');
+  assert.deepEqual(brief(posted.problems).slice(2), [
+    ['/work/shop/diagram.d2', 'render', 'warning', 'The icon ./icons/gone.svg does not exist', 3],
+    ['/work/shop/diagram.d2', 'render', 'error', 'The diagram could not be laid out: boom', 0],
+  ]);
+  await s.session.receive({ type: 'renderProblems', problems: [] });
+  assert.equal(reported().length, 3);
+
+  // A problem in the diagram itself opens there; one in an ADR opens that file for editing.
+  const range = { line: 2, col: 0, endLine: 2, endCol: 5 };
+  await s.session.receive({ type: 'openFile', path: '/work/shop/diagram.d2', range });
+  await s.session.receive({ type: 'openFile', path: '/work/shop/adr/0001-a.md', range });
+  assert.deepEqual(s.calls.slice(-2), [
+    ['showSource', range],
+    ['editFile', '/work/shop/adr/0001-a.md', range],
+  ]);
+
+  s.session.dispose();
+  assert.deepEqual(reported(), [], 'cleared when the preview closes');
 });
 
 test('new decisions need adr-folders', async () => {

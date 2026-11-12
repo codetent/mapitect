@@ -1846,15 +1846,6 @@ g.btn:hover .glyph {
   background: var(--hover);
 }
 
-.adr-unmatched {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  color: #f59e0b;
-  white-space: nowrap;
-}
-
 /* card badge */
 
 .adr-badge {
@@ -1996,6 +1987,36 @@ body.theme-light .adr-reader {
 .r-meta dd {
   margin: 0;
   color: var(--fg);
+}
+
+.r-components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.r-component {
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  line-height: 18px;
+}
+
+button.r-component {
+  cursor: pointer;
+}
+
+button.r-component:hover {
+  background: var(--hover);
+  border-color: var(--primary);
+}
+
+.r-component.current {
+  border-color: transparent;
+  padding: 0;
 }
 
 .r-file {

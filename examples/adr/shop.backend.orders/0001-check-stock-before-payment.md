@@ -2,6 +2,7 @@
 status: accepted
 date: 2025-05-06
 decision-makers: Checkout team
+components: [shop.backend.orders, payments]
 ---
 
 # Check stock before taking payment

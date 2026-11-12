@@ -3,6 +3,7 @@
 * Status: superseded by ADR-0002
 * Deciders: Catalog team
 * Date: 2025-02-11
+* Components: catalog
 
 ## Context and Problem Statement
 

@@ -93,11 +93,16 @@ function harness(initialText: string) {
 
   const vscode = {
     languages: {
-      createDiagnosticCollection: () => ({
-        set: (uri: any, d: any[]) => diagnostics.set(uri.toString(), d),
-        delete: (uri: any) => diagnostics.delete(uri.toString()),
-        dispose() {},
-      }),
+      // The compiler's collection is `diagnostics`; each preview has its own for mapitect's problems.
+      createDiagnosticCollection: (name: string) => {
+        const map = name === 'd2' ? diagnostics : new Map<string, any[]>();
+        return {
+          set: (uri: any, d: any[]) => map.set(uri.toString(), d),
+          delete: (uri: any) => map.delete(uri.toString()),
+          clear: () => map.clear(),
+          dispose() {},
+        };
+      },
     },
     commands: {
       registerCommand: (id: string, fn: Fn) => {
@@ -229,7 +234,7 @@ test('extension compiles with the official D2 build, applies text edits and sync
     assert.deepEqual(Object.keys(first.model.nodes).sort(), ['api', 'db']);
     assert.equal(first.model.nodes.db.shape, 'cylinder');
     assert.equal(first.model.edges[0].id, '(api -> db)[0]');
-    assert.deepEqual(first.adrs, { components: {}, unmatched: [], roots: [] }, 'no adr-folders variable');
+    assert.deepEqual(first.adrs, { components: {}, system: [], roots: [] }, 'no adr-folders variable');
     assert.deepEqual(h.watched, []);
 
     // Reload compiles again even though the text is unchanged.

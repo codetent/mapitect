@@ -61,6 +61,17 @@ export interface ParseIssue {
   message: string;
   severity: Severity;
   range: SourceRange;
+  source?: 'd2' | 'mapitect'; // the compiler (default), or mapitect about what it can't show
+}
+
+// A problem mapitect found outside the compiler: in the decision records, or
+// while drawing the diagram. `file` is the ADR or the diagram it is about.
+export interface Problem {
+  file: string; // absolute path
+  message: string;
+  severity: Severity;
+  range: SourceRange;
+  source: 'decisions' | 'render';
 }
 
 // Visual edits requested by the webview; the host turns them into text edits.
@@ -93,7 +104,7 @@ export interface DiagramModel {
 
 // ---------------------------------------------------------------- decisions
 
-// Architecture decision records (MADR) found in per-component folders.
+// Architecture decision records (MADR) from the folders in `vars.adr-folders`.
 export type AdrStatus = 'proposed' | 'accepted' | 'rejected' | 'deprecated' | 'superseded' | 'unknown';
 
 export interface Adr {
@@ -107,12 +118,13 @@ export interface Adr {
   decisionMakers?: string;
   consulted?: string;
   informed?: string;
+  components: string[]; // element references from the metadata, as written; none: system-wide
   body: string; // Markdown after the title and metadata
 }
 
 export interface AdrIndex {
   components: Record<string, Adr[]>; // element id -> its decisions, ordered by number
-  unmatched: string[]; // folders that contain ADRs but match no element
+  system: Adr[]; // decisions that name no element: they apply to the whole system
   roots: string[]; // ADR roots from `vars.adr-folders`, as written
 }
 

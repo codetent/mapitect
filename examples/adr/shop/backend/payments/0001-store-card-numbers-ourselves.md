@@ -3,6 +3,7 @@ status: rejected
 date: 2025-02-18
 decision-makers: Checkout team
 consulted: Security guild
+components: [shop.backend.payments]
 ---
 
 # Store card numbers ourselves

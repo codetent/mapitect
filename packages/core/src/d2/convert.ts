@@ -2,7 +2,7 @@ import type { CompileResponse, Connection, Shape } from '@d2lang/d2';
 import { LIFECYCLES, type DiagramEdge, type DiagramModel, type DiagramNode, type Direction, type Lifecycle, type ParseIssue, type SourceRange, type TableField } from '../model.ts';
 import { boxText, segKey, span, splitId, valueRange, type Span } from './ast.ts';
 import { indexSource, type SourceIndex, type Stmt } from './source.ts';
-import { adrFoldersOf } from '../adr.ts';
+import { adrFolderEntries } from '../adr.ts';
 
 export interface Built {
   model: DiagramModel;
@@ -13,11 +13,16 @@ export interface Built {
   ids: Map<string, string>;
   // ADR roots from `vars.adr-folders`, as written
   adrFolders: string[];
+  // where each of them is written, for problems about a folder
+  adrFolderRanges: Record<string, SourceRange>;
 }
 
 // D2 theme colour codes (N1…N7, B1…B6, AA2…) mean "not set by the user".
 const THEME_COLOR = /^(N[1-7]|B[1-6]|A[AB]\d)$/;
 const DIRECTIONS = new Set(['up', 'down', 'left', 'right']);
+// mapitect lays out the diagram with ELK, so D2's own sizing, positions and grids don't apply.
+const IGNORED_ATTRS = new Set(['width', 'height', 'top', 'left', 'grid-rows', 'grid-columns', 'grid-gap', 'vertical-gap', 'horizontal-gap']);
+const BOARDS = new Set(['layers', 'scenarios', 'steps']);
 
 export function buildModel(res: CompileResponse, text: string): Built {
   const lineStarts = [0];
@@ -68,7 +73,15 @@ export function buildModel(res: CompileResponse, text: string): Built {
     located.set(id, priority);
     nodes[id].range = toRange(span);
   };
+  const notShown = (stmt: Stmt, message: string) =>
+    issues.push({ severity: 'info', source: 'mapitect', message, range: toRange(span(stmt.mk.key?.range ?? stmt.mk.range)) });
   for (const stmt of index.stmts) {
+    const attr = stmt.attr?.length === 1 ? stmt.attr[0].toLowerCase() : '';
+    if ((stmt.kind === 'attr' || stmt.kind === 'root') && IGNORED_ATTRS.has(attr)) {
+      notShown(stmt, `mapitect lays out diagrams itself, so ${attr} is ignored`);
+    } else if (stmt.kind === 'root' && BOARDS.has(attr)) {
+      notShown(stmt, `mapitect shows only the main board; ${attr} are not displayed`);
+    }
     if (stmt.kind === 'node' || stmt.kind === 'attr') {
       const id = ids.get(segKey(stmt.node!));
       if (!id) continue;
@@ -85,6 +98,7 @@ export function buildModel(res: CompileResponse, text: string): Built {
         else {
           issues.push({
             severity: 'warning',
+            source: 'mapitect',
             message: `Unknown status "${boxText(stmt.mk.value)}"; use ${LIFECYCLES.join(', ')}`,
             range: toRange(span(valueRange(stmt.mk.value) ?? stmt.mk.range)),
           });
@@ -132,6 +146,7 @@ export function buildModel(res: CompileResponse, text: string): Built {
     edges.push(edgeOf(c, range));
   }
 
+  const folders = adrFolderEntries(res.graph.ast);
   const root = res.graph.root as { attributes?: { direction?: { value?: string } } } | undefined;
   const dir = root?.attributes?.direction?.value ?? '';
   return {
@@ -147,7 +162,8 @@ export function buildModel(res: CompileResponse, text: string): Built {
     index,
     edgeSites,
     ids,
-    adrFolders: adrFoldersOf(res.graph.ast),
+    adrFolders: folders.map((f) => f.folder),
+    adrFolderRanges: Object.fromEntries(folders.filter((f) => f.range).map((f) => [f.folder, toRange(span(f.range!))])),
   };
 }
 
