@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/codetent/mapitect/compare/v0.3.0...v1.0.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* the folder an ADR is in no longer links it to an element. Add `components: [<element>]` to its metadata; files whose folder name still matches an element get a hint naming the entry.
+
+### Features
+
+* link decisions through a components field and report problems ([1bbe610](https://github.com/codetent/mapitect/commit/1bbe610da419a6141570af64052e782a5cef8cdb))
+* **ui:** give the sidebar root Components and ADRs folders ([faa92b3](https://github.com/codetent/mapitect/commit/faa92b31098c3d84313f8c86babc8fc00488e85a))
+
 ## [0.3.0](https://github.com/codetent/mapitect/compare/v0.2.0...v0.3.0) (2026-11-07)
 
 
