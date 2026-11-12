@@ -131,7 +131,7 @@ In MADR 2 files, write it as a bullet under the title: `* Components: shop.backe
 
 Elements with decisions get a badge with the number of records, and groups show the count in their header. The details panel lists an element's decisions with number, title and status. Click a decision or a badge to open it in the decision reader, which also shows the date, the decision-makers and every element the decision applies to. Click one of those elements to read the decision next to it. Use `←` and `→` to step through the component's decisions. Links between ADRs open in the reader as well.
 
-System-wide decisions are listed under *System-wide ADRs* at the top of the sidebar's tree, and in the menu you get by right-clicking the empty canvas.
+The sidebar's tree starts with two folders, like the ones under each element: *Components* holds the top-level elements, and *ADRs* the system-wide decisions. These are also in the menu you get by right-clicking the empty canvas.
 
 To write a new decision, right-click an element and choose *New decision…*, or click the `+` next to *Decisions* in the details panel. For a system-wide one, right-click the empty canvas and choose *New system-wide decision…*. mapitect asks for a title, creates the next numbered MADR file with `status: proposed`, today's date and the element in `components`, and opens it in the editor. The file goes next to the element's existing decisions (in the first folder that has any), or straight into the first `adr-folders` entry, and gets the number after the highest one in that folder.
 

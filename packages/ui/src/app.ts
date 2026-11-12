@@ -587,7 +587,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     // A component lists its child elements and its decisions in two folders.
     const folderRow = (id: string, folder: 'components' | 'adrs', count: number, depth: number): boolean => {
       const key = `${folder}:${id}`;
-      const label = folder === 'components' ? 'Components' : id === SYSTEM ? 'System-wide ADRs' : 'ADRs';
+      const label = folder === 'components' ? 'Components' : 'ADRs';
       const open = q ? true : !treeShut.has(key);
       rows.push(
         `<div class="tree-row tree-folder" data-folder="${esc(key)}" style="--depth:${depth}" role="treeitem">
@@ -645,8 +645,10 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         }
       }
     };
+    // The diagram itself is the tree's root: its top-level elements, then the system-wide decisions.
+    const roots = q ? model.roots.filter((id) => keep.has(id)) : model.roots;
+    if (roots.length && folderRow(SYSTEM, 'components', roots.length, 0)) walk(roots, 1);
     decisionRows(SYSTEM, 0);
-    walk(model.roots, 0);
     treeEl.innerHTML = rows.join('') || `<div class="tree-empty">${q ? 'No matches' : 'No elements'}</div>`;
 
     const issues = shownProblems();
