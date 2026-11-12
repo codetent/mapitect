@@ -2,7 +2,7 @@
 // Paths are absolute and '/'-separated (see path.ts); hosts convert their
 // native paths and URIs at the boundary.
 
-import type { SourceRange, TextEdit } from './model.ts';
+import type { Problem, SourceRange, TextEdit } from './model.ts';
 import type { HostMessage, PreviewConfig } from './protocol.ts';
 
 export interface Disposable {
@@ -42,11 +42,13 @@ export interface HostShell {
   highlightSource(range: SourceRange | null): void; // mark without moving the cursor or opening anything
   openFile(file: string, where: 'beside' | 'main'): void; // beside the diagram, or in the main editor area
   openExternal(url: string): void;
-  editFile(file: string, selection: SourceRange): Promise<void>; // a file just created, ready to type in
+  editFile(file: string, selection: SourceRange): Promise<void>; // open a file for typing, with `selection` selected
 
   saveImage(format: 'svg' | 'png', data: string, suggested: string): Promise<void>; // png data is base64
   askText(options: { title: string; prompt: string; placeholder?: string; required: string }): Promise<string | undefined>;
   showError(message: string): void;
 
   watch?(dir: string, glob: string, onChange: () => void): Disposable; // optional: changes reload ADRs
+  // optional: the preview's problems (decisions, drawing), all of them each time; [] clears them
+  problems?(problems: Problem[]): void;
 }

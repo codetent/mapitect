@@ -2,6 +2,7 @@
 status: accepted
 date: 2025-06-03
 decision-makers: Catalog team
+components: [catalog]
 ---
 
 # Search with PostgreSQL full-text search

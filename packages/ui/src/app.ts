@@ -2,9 +2,9 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import 'd3-transition';
 import { easeCubicOut } from 'd3-ease';
-import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, EditOp, Lifecycle, SourceRange, UiMessage } from '@mapitect/core';
+import type { Adr, AdrIndex, DiagramEdge, DiagramModel, DiagramNode, EditOp, Lifecycle, ParseIssue, Problem, RenderProblem, SourceRange, UiMessage } from '@mapitect/core';
 import type { HostBridge } from './bridge.ts';
-import { adrNumber, DecisionReader, statusLabel, statusPill } from './decisions.ts';
+import { adrNumber, DecisionReader, statusLabel, statusPill, SYSTEM } from './decisions.ts';
 import { closeInlineRename, showMenu, startInlineRename, type MenuItem } from './editing.ts';
 import { CARD, layoutScene, type Box, type Scene } from './layout.ts';
 import { iconSvg, Renderer } from './render.ts';
@@ -133,6 +133,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
 
   let model: DiagramModel | null = null;
   let adrIndex: AdrIndex | null = null;
+  // Problems outside the compiler's (decisions, drawing), from the host.
+  let problems: Problem[] = [];
+  // What went wrong drawing the diagram, for the host to report.
+  let layoutError: string | null = null;
+  const failedIcons = new Map<string, string | undefined>(); // element id -> the icon that failed
+  let renderReport: number | undefined;
   let graph: VisibleGraph | null = null;
   let scene: Scene | null = null;
   let firstRender = true;
@@ -157,7 +163,22 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     contextMenu: (id, ev) => openContextMenu(id, ev),
     decisions: (id) => openDecisions(id),
     openLink: (url) => host.send({ type: 'openLink', url }),
+    iconFailed: (id) => {
+      if (failedIcons.has(id)) return;
+      failedIcons.set(id, model?.nodes[id]?.icon);
+      reportRenderProblems();
+    },
   });
+
+  // Sends the host every current render problem, once things settle.
+  function reportRenderProblems(): void {
+    clearTimeout(renderReport);
+    renderReport = window.setTimeout(() => {
+      const list: RenderProblem[] = [...failedIcons.keys()].map((id) => ({ kind: 'icon', id }));
+      if (layoutError) list.unshift({ kind: 'layout', message: layoutError });
+      host.send({ type: 'renderProblems', problems: list });
+    }, 300);
+  }
 
   function persist(): void {
     const t = currentTransform();
@@ -296,9 +317,17 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     } catch (err) {
       console.error(err);
       toast(`Layout failed: ${(err as Error).message}`);
+      if (seq === layoutSeq) {
+        layoutError = (err as Error).message ?? String(err);
+        reportRenderProblems();
+      }
       return;
     }
     if (seq !== layoutSeq) return;
+    if (layoutError) {
+      layoutError = null;
+      reportRenderProblems();
+    }
     graph = g;
     scene = s;
 
@@ -558,22 +587,23 @@ export function mount(app: HTMLElement, host: HostBridge): void {
     // A component lists its child elements and its decisions in two folders.
     const folderRow = (id: string, folder: 'components' | 'adrs', count: number, depth: number): boolean => {
       const key = `${folder}:${id}`;
+      const label = folder === 'components' ? 'Components' : id === SYSTEM ? 'System-wide ADRs' : 'ADRs';
       const open = q ? true : !treeShut.has(key);
       rows.push(
         `<div class="tree-row tree-folder" data-folder="${esc(key)}" style="--depth:${depth}" role="treeitem">
           <span class="twisty${open ? ' open' : ''}">${iconSvg('chevronRight', 12)}</span>
           <span class="tree-icon">${iconSvg('folder', 13)}</span>
-          <span class="tree-label">${folder === 'components' ? 'Components' : 'ADRs'}</span>
+          <span class="tree-label">${label}</span>
           <span class="tree-count">${count}</span>
         </div>`,
       );
       return open;
     };
     const decisionRows = (id: string, depth: number) => {
-      const list = (adrIndex?.components[id] ?? []).map((a, i) => ({ a, i })).filter(({ a }) => !q || adrHit(a));
+      const list = decisionsOf(id).map((a, i) => ({ a, i })).filter(({ a }) => !q || adrHit(a));
       if (!list.length || !folderRow(id, 'adrs', list.length, depth)) return;
       for (const { a, i } of list) {
-        const cls = ['tree-row', 'tree-adr', reader.openFile === a.file ? 'selected' : '', q ? 'match' : ''].join(' ');
+        const cls = ['tree-row', 'tree-adr', reader.openFor === id && reader.openFile === a.file ? 'selected' : '', q ? 'match' : ''].join(' ');
         rows.push(
           `<div class="${cls}" data-adr-of="${esc(id)}" data-adr-index="${i}" style="--depth:${depth + 1}" role="treeitem" title="${esc(a.name)}">
             <span class="twisty leaf"></span>
@@ -615,21 +645,20 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         }
       }
     };
+    decisionRows(SYSTEM, 0);
     walk(model.roots, 0);
     treeEl.innerHTML = rows.join('') || `<div class="tree-empty">${q ? 'No matches' : 'No elements'}</div>`;
 
-    const issues = model.issues.filter((i) => i.severity !== 'info');
+    const issues = shownProblems();
     const foot = $('.sidebar-foot');
     foot.innerHTML = issues.length
-      ? `<button class="problems" title="Go to first problem">${iconSvg('warning', 14)}<span>${issues.length} problem${issues.length === 1 ? '' : 's'}</span><span class="problem-msg">${esc(issues[0].message)}</span></button>`
+      ? `<button class="problems" title="${esc(issues.map((i) => i.message).join('\n'))}">${iconSvg('warning', 14)}<span>${issues.length} problem${issues.length === 1 ? '' : 's'}</span><span class="problem-msg">${esc(issues[0].message)}</span></button>`
       : `<span class="ok-dot"></span><span>${Object.keys(model.nodes).length} elements · ${model.edges.length} connections</span>`;
-    const stray = adrIndex?.unmatched ?? [];
-    if (stray.length) {
-      foot.insertAdjacentHTML(
-        'beforeend',
-        `<span class="adr-unmatched" title="ADR folders that match no element: ${esc(stray.join(', '))}">${iconSvg('decision', 13)}${stray.length} unmatched</span>`,
-      );
-    }
+  }
+
+  // The compiler's problems first, then the decisions' and drawing's; errors and warnings only.
+  function shownProblems(): (ParseIssue | Problem)[] {
+    return [...(model?.issues ?? []), ...problems].filter((i) => i.severity !== 'info');
   }
 
   treeEl.addEventListener('click', (ev) => {
@@ -650,7 +679,7 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       renderTree();
     } else if (row?.dataset.adrOf) {
       const id = row.dataset.adrOf;
-      if (view.selected !== id) setSelected(id);
+      if (id !== SYSTEM && view.selected !== id) setSelected(id);
       reader.open(id, Number(row.dataset.adrIndex));
     } else if (row) reveal(row.dataset.id!);
   });
@@ -661,8 +690,10 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   });
 
   $('.sidebar-foot').addEventListener('click', () => {
-    const issue = model?.issues.find((i) => i.severity !== 'info');
-    if (issue) host.send({ type: 'navigate', range: issue.range });
+    const issue = shownProblems()[0];
+    if (!issue) return;
+    if ('file' in issue) host.send({ type: 'openFile', path: issue.file, range: issue.range });
+    else host.send({ type: 'navigate', range: issue.range });
   });
 
   let searchHits = new Set<string>();
@@ -1252,26 +1283,41 @@ export function mount(app: HTMLElement, host: HostBridge): void {
   const reader = new DecisionReader($('.adr-reader'), {
     openFile: (path) => host.send({ type: 'openFile', path }),
     openLink: (url) => host.send({ type: 'openLink', url }),
-    decisionsOf: (component) => adrIndex?.components[component] ?? [],
-    nameOf: (component) => nameOf(component),
-    find: (file) => {
-      for (const [component, list] of Object.entries(adrIndex?.components ?? {})) {
+    decisionsOf: (component) => decisionsOf(component),
+    nameOf: (component) => (component === SYSTEM ? 'System-wide' : nameOf(component)),
+    find: (file, current) => {
+      const lists: [string, Adr[]][] = [[SYSTEM, adrIndex?.system ?? []], ...Object.entries(adrIndex?.components ?? {})];
+      if (current) lists.unshift([current, decisionsOf(current)]);
+      for (const [component, list] of lists) {
         const index = list.findIndex((a) => a.file === file);
         if (index >= 0) return { component, index };
       }
       return undefined;
     },
+    componentsOf: (file) =>
+      Object.entries(adrIndex?.components ?? {})
+        .filter(([, list]) => list.some((a) => a.file === file))
+        .map(([id]) => id),
+    show: (component, file) => {
+      if (view.selected !== component) setSelected(component);
+      reader.open(component, Math.max(0, decisionsOf(component).findIndex((a) => a.file === file)));
+    },
     onChange: () => renderTree(),
   });
 
+  function decisionsOf(id: string): Adr[] {
+    return (id === SYSTEM ? adrIndex?.system : adrIndex?.components[id]) ?? [];
+  }
+
   function openDecisions(id: string): void {
-    if (!adrIndex?.components[id]?.length) return;
-    if (view.selected !== id) setSelected(id);
+    if (!decisionsOf(id).length) return;
+    if (id !== SYSTEM && view.selected !== id) setSelected(id);
     reader.open(id, 0);
   }
 
   // The host asks for a title, then creates the MADR file and opens it.
-  function newDecision(id: string): void {
+  // `null` makes a system-wide decision.
+  function newDecision(id: string | null): void {
     if (!adrIndex?.roots.length) return toast("Add adr-folders to the file's vars to record decisions");
     host.send({ type: 'newDecision', id });
   }
@@ -1282,12 +1328,12 @@ export function mount(app: HTMLElement, host: HostBridge): void {
       ? `<button class="icon-btn d-add" data-action="new-decision" title="New decision">${iconSvg('plus', 14)}</button>`
       : '';
     if (!list.length) {
-      const key = esc(model!.nodes[id].key);
+      const ref = esc(componentRef(id));
       return `<div class="d-section-title">Decisions${add}</div>
         <p class="d-note">${
           add
-            ? 'No decisions recorded yet.'
-            : `No ADR folders set. Add <code>adr-folders: [adr]</code> to the file's <code>vars</code> and MADR files to <code>adr/${key}/</code>.`
+            ? `No decisions recorded yet. A decision applies to this element when its metadata has <code>components: [${ref}]</code>.`
+            : `No ADR folders set. Add <code>adr-folders: [adr]</code> to the file's <code>vars</code>, and <code>components: [${ref}]</code> to the metadata of the MADR files there.`
         }</p>`;
     }
     return `<div class="d-section-title">Decisions <span>${list.length}</span>${add}</div>
@@ -1300,6 +1346,13 @@ export function mount(app: HTMLElement, host: HostBridge): void {
           </button>`,
         )
         .join('')}</div>`;
+  }
+
+  // How a decision's `components` names an element: its key when no other element has it.
+  function componentRef(id: string): string {
+    const key = model!.nodes[id].key;
+    const shared = Object.values(model!.nodes).some((n) => n.id !== id && n.key.toLowerCase() === key.toLowerCase());
+    return shared ? id : key;
   }
 
   // ------------------------------------------------------------------ editing
@@ -1374,6 +1427,11 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         { label: 'Redo', icon: 'redo', hint: '⇧⌘Z', run: () => host.send({ type: 'redo' }) },
         'sep',
         { label: 'Fit to screen', icon: 'fit', hint: 'F', run: () => fitAll() },
+        'sep',
+        ...(adrIndex?.system.length
+          ? [{ label: `System-wide decisions (${adrIndex.system.length})`, icon: 'decision' as IconName, run: () => openDecisions(SYSTEM) }]
+          : []),
+        { label: 'New system-wide decision…', icon: 'plus', run: () => newDecision(null) },
       ];
     } else if (id.startsWith('edge:')) {
       const e = directEdge(id);
@@ -1465,6 +1523,10 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         model = msg.model;
         docUri = msg.uri;
         adrIndex = msg.adrs ?? null;
+        problems = msg.problems ?? [];
+        const stale = [...failedIcons].filter(([id, icon]) => model!.nodes[id]?.icon !== icon);
+        for (const [id] of stale) failedIcons.delete(id);
+        if (stale.length) reportRenderProblems();
         renderer.adrCounts = new Map(Object.entries(adrIndex?.components ?? {}).map(([id, list]) => [id, list.length]));
         reader.refresh();
         renderBanner();
@@ -1481,6 +1543,10 @@ export function mount(app: HTMLElement, host: HostBridge): void {
         void refresh({ animate: true, fit: turned ? 'all' : undefined });
         break;
       }
+      case 'problems':
+        problems = msg.problems;
+        renderTree();
+        break;
       case 'toast':
         toast(msg.message);
         break;

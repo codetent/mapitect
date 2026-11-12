@@ -18,6 +18,7 @@ export interface RenderHandlers {
   contextMenu(id: string | null, ev: MouseEvent): void; // id is a node id or "edge:<id>"
   decisions(id: string): void; // the ADR badge was clicked
   openLink(url: string): void; // the link mark was clicked
+  iconFailed(id: string): void; // the element's icon could not be loaded
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -317,7 +318,7 @@ export class Renderer {
     const header = g.select('g.group-header');
     const holder = header.select('g.icon-holder');
     holder.selectAll('*').remove();
-    drawIcon(holder, v.node.icon, v.type.icon, 32, 18);
+    drawIcon(holder, v.node.icon, v.type.icon, 32, 18, () => this.on.iconFailed(v.id));
     header.select('text.group-title').text(v.node.label.replace(/\n/g, ' '));
     const adrs = this.adrCounts.get(v.id) ?? 0;
     const decisions = adrs ? ` · ${adrs} ADR${adrs === 1 ? '' : 's'}` : '';
@@ -396,7 +397,7 @@ export class Renderer {
     const fontColor = style['font-color'] && isColor(style['font-color']) ? style['font-color'] : null;
     const tile = g.append('g').attr('class', 'icon-tile-g').attr('transform', `translate(${CARD.pad},${CARD.pad})`);
     tile.append('rect').attr('class', 'icon-tile').attr('width', CARD.icon).attr('height', CARD.icon).attr('rx', 9);
-    drawIcon(tile, v.node.icon, v.type.icon, CARD.icon, 20);
+    drawIcon(tile, v.node.icon, v.type.icon, CARD.icon, 20, () => this.on.iconFailed(v.id));
 
     const tx = CARD.pad + CARD.icon + CARD.gap;
     const headerH = Math.max(CARD.icon, 16 + c.title.length * CARD.titleLine);
@@ -606,7 +607,7 @@ function edgeStatus(scene: Scene, e: SEdge): Lifecycle | null {
   return ends.includes('future') ? 'future' : null;
 }
 
-function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile: number, size: number): void {
+function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile: number, size: number, failed?: () => void): void {
   const off = (tile - size) / 2;
   if (url) {
     const img = parent
@@ -620,6 +621,7 @@ function drawIcon(parent: Sel, url: string | undefined, fallback: IconName, tile
     img.on('error', () => {
       img.remove();
       icon(parent, fallback, size, off, off);
+      failed?.();
     });
     return;
   }

@@ -2,6 +2,7 @@
 status: proposed
 date: 2025-09-09
 decision-makers: Checkout team
+components: [shop.backend.payments]
 ---
 
 # Support PayPal through Stripe

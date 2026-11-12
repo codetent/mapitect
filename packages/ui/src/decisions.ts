@@ -1,5 +1,6 @@
 // The decision reader: a drawer that renders a component's ADRs (MADR
-// Markdown) with their status and metadata, one at a time.
+// Markdown) with their status and metadata, one at a time. The system-wide
+// decisions are read like a component's, under the SYSTEM key.
 
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -14,6 +15,10 @@ const STATUS_LABEL: Record<AdrStatus, string> = {
   superseded: 'Superseded',
   unknown: 'No status',
 };
+
+// Stands for the whole system where a component id is expected; '*' is a glob
+// in D2, so no element has it as its id.
+export const SYSTEM = '*';
 
 export function statusLabel(adr: Adr): string {
   return STATUS_LABEL[adr.status];
@@ -31,9 +36,14 @@ export interface ReaderHost {
   openFile(path: string): void;
   openLink(url: string): void;
   // Locate an ADR by absolute path, e.g. for links between ADRs.
-  find(file: string): { component: string; index: number } | undefined;
+  // Prefers `current` when the ADR is among its decisions.
+  find(file: string, current: string | null): { component: string; index: number } | undefined;
   decisionsOf(component: string): Adr[];
   nameOf(component: string): string;
+  // The elements an ADR applies to; none for a system-wide one.
+  componentsOf(file: string): string[];
+  // Show the ADR among the decisions of another element it applies to.
+  show(component: string, file: string): void;
   // The reader opened, closed or moved to another decision.
   onChange(): void;
 }
@@ -105,6 +115,16 @@ export class DecisionReader {
       ['Consulted', adr.consulted],
       ['Informed', adr.informed],
     ].filter(([, v]) => v);
+    const linked = this.host.componentsOf(adr.file);
+    const appliesTo = linked.length
+      ? linked
+          .map((id) =>
+            id === this.component
+              ? `<span class="r-component current">${esc(this.host.nameOf(id))}</span>`
+              : `<button class="r-component" data-component="${esc(id)}" title="Show with ${esc(this.host.nameOf(id))}">${esc(this.host.nameOf(id))}</button>`,
+          )
+          .join('')
+      : '<span class="r-component current">The whole system</span>';
     const html = DOMPurify.sanitize(marked.parse(adr.body, { gfm: true, async: false }) as string);
     this.el.innerHTML = `
       <header class="r-head">
@@ -121,7 +141,7 @@ export class DecisionReader {
       <div class="r-scroll">
         <div class="r-kicker"><span class="adr-num">${adrNumber(adr)}</span>${statusPill(adr)}</div>
         <h1 class="r-title">${esc(adr.title)}</h1>
-        ${meta.length ? `<dl class="r-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v!)}</dd>`).join('')}</dl>` : ''}
+        <dl class="r-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v!)}</dd>`).join('')}<dt>Applies to</dt><dd class="r-components">${appliesTo}</dd></dl>
         <article class="markdown">${html}</article>
         <footer class="r-file">${esc(adr.name)}</footer>
       </div>`;
@@ -133,6 +153,7 @@ export class DecisionReader {
     if (btn?.dataset.step) return this.step(Number(btn.dataset.step));
     if (btn?.dataset.act === 'close') return this.close();
     if (btn?.dataset.act === 'file' && this.el.dataset.file) return this.host.openFile(this.el.dataset.file);
+    if (btn?.dataset.component && this.el.dataset.file) return this.host.show(btn.dataset.component, this.el.dataset.file);
 
     const link = target.closest<HTMLAnchorElement>('article a[href]');
     if (!link) return;
@@ -145,7 +166,7 @@ export class DecisionReader {
     if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return this.host.openLink(href);
     // Relative link: another ADR opens here, any other file in the editor.
     const file = resolvePath(this.el.dataset.file!, decodeURIComponent(href.split('#')[0]));
-    const hit = this.host.find(file);
+    const hit = this.host.find(file, this.component);
     if (hit) this.open(hit.component, hit.index);
     else this.host.openFile(file);
   }

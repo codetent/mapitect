@@ -52,6 +52,19 @@ test('compile errors become located issues', async () => {
   assert.equal(r.issues[0].range.line, 1);
 });
 
+test('what mapitect does not draw is reported as info', async () => {
+  const built = await build('grid-rows: 2\na: { width: 80; height: 10 }\nlayers: {\n  x: { b }\n}\n');
+  assert.deepEqual(
+    built.model.issues.map((i) => [i.source, i.severity, i.message, i.range.line, i.range.col]),
+    [
+      ['mapitect', 'info', 'mapitect lays out diagrams itself, so grid-rows is ignored', 0, 0],
+      ['mapitect', 'info', 'mapitect lays out diagrams itself, so width is ignored', 1, 5],
+      ['mapitect', 'info', 'mapitect lays out diagrams itself, so height is ignored', 1, 16],
+      ['mapitect', 'info', 'mapitect shows only the main board; layers are not displayed', 2, 0],
+    ],
+  );
+});
+
 test('a <- b is drawn as b -> a but keeps the compiler id', async () => {
   const { model } = await build('a <- b: back\n');
   assert.deepEqual([model.edges[0].source, model.edges[0].target, model.edges[0].dstArrow], ['b', 'a', true]);

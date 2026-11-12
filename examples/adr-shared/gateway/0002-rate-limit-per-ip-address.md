@@ -3,6 +3,7 @@ status: deprecated
 date: 2025-04-02
 decision-makers: Security guild
 informed: Platform team
+components: [gateway]
 ---
 
 # Rate limit requests per IP address

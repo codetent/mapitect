@@ -92,7 +92,8 @@ The [example](examples/platform.d2) is a small online bookshop that uses every f
 - Badges with the number of **ADRs per element**
 - A **decision reader** with status, date and decision-makers
 - **New decision…** creates the next numbered MADR file for an element
-- Decisions from several folders are merged per element and update live
+- A decision can apply to **several elements** or to the **whole system**, and updates live
+- **Problems** in decisions, like a `components` entry that matches no element, show in the Problems panel
 
 </td>
 </tr>
@@ -133,12 +134,21 @@ code --install-extension packages/vscode/mapitect-*.vsix
 
 Then open [`examples/platform.d2`](examples/platform.d2) and press `Cmd+K V` (`Ctrl+K V` on Windows and Linux), or click the preview button in the editor title bar.
 
-To attach decision records to a diagram, list their folders in the `adr-folders` variable. Each folder has one subfolder per element:
+To attach decision records to a diagram, list their folders in the `adr-folders` variable:
 
 ```d2
 vars: {
   adr-folders: [adr; ../shared/decisions]
 }
+```
+
+Each record names the elements it applies to in its metadata. A record that names none applies to the whole system:
+
+```markdown
+---
+status: accepted
+components: [gateway, shop.backend.orders]
+---
 ```
 
 ## Development

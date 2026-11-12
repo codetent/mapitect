@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { assignAdrs, parseMadr, planNewAdr, scanAdrFolders } from '../src/adr.ts';
+import { indexAdrs, parseMadr, planNewAdr, scanAdrs, type AdrScan } from '../src/adr.ts';
 import { D2Compiler } from '../src/d2/compiler.ts';
 import { nodeFileSystem } from '../node/index.ts';
 import type { DiagramModel, DiagramNode } from '../src/model.ts';
@@ -54,6 +54,7 @@ test('parses MADR 4 front matter', () => {
   assert.equal(adr.date, '2026-10-01');
   assert.equal(adr.decisionMakers, 'Ana, Ben');
   assert.equal(adr.consulted, 'Platform team, Security');
+  assert.deepEqual(adr.components, []);
   assert.ok(adr.body.startsWith('## Context and Problem Statement'));
 });
 
@@ -69,7 +70,17 @@ test('parses MADR 2 bullet metadata and files without any', () => {
   assert.equal(bare.status, 'unknown');
 });
 
-test('folders match by key, full id, nested path or label', () => {
+// Writes the files below a temporary folder and scans its `adr` and `more` roots.
+async function scanned(files: Record<string, string>, roots = ['adr', 'more']): Promise<{ dir: string; scan: AdrScan }> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'mapitect-adr-'));
+  for (const [name, text] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, name)), { recursive: true });
+    await writeFile(path.join(dir, name), text);
+  }
+  return { dir, scan: await scanAdrs(nodeFileSystem, dir.split(path.sep).join('/'), roots) };
+}
+
+test('components link a decision to one or several elements; none makes it system-wide', async () => {
   const m = model({
     k2: 'K2 Platform',
     'k2.bff': 'BFF gateway',
@@ -78,42 +89,25 @@ test('folders match by key, full id, nested path or label', () => {
     'k2.data.ui': 'ui db',
     'k2.frontends.ui': 'Web & app UI',
   });
-  const adr = (name: string) => parseMadr('# T\n', `/r/${name}`);
-  const index = assignAdrs(
-    [
-      { dir: 'bff', adrs: [adr('0002-b.md'), adr('0001-a.md')] },
-      { dir: 'k2.services.content', adrs: [adr('0001-c.md')] },
-      { dir: 'k2/frontends/ui', adrs: [adr('0001-u.md')] },
-      { dir: 'domain-services', adrs: [adr('0001-d.md')] },
-      { dir: 'ui', adrs: [adr('0001-x.md')] }, // two elements have the key "ui"
-      { dir: 'nope', adrs: [adr('0001-n.md')] },
-    ],
-    m,
-    ['adr'],
-  );
-  assert.deepEqual(index.components['k2.bff'].map((a) => a.name), ['0001-a.md', '0002-b.md'], 'sorted by number');
-  assert.equal(index.components['k2.services.content'].length, 1);
-  assert.equal(index.components['k2.frontends.ui'].length, 1);
-  assert.equal(index.components['k2.services'].length, 1);
-  assert.deepEqual(index.unmatched, ['ui', 'nope']);
-});
-
-test('scans several roots, skipping READMEs, templates and hidden files', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'mapitect-adr-'));
+  const { dir, scan } = await scanned({
+    'adr/0001-a.md': '---\nstatus: accepted\ncomponents: [bff, K2.Services.Content]\n---\n# A\n',
+    'adr/0002-b.md': '---\nstatus: accepted\ncomponents:\n  - k2.bff\n---\n# B\n',
+    'adr/0003-c.md': '# C\n\n* Status: proposed\n* Components: k2.frontends.ui\n',
+    'adr/0004-d.md': '---\nstatus: accepted\n---\n# Everything runs on AWS\n',
+    'adr/0005-e.md': '---\nstatus: accepted\ncomponents: [ui, nope]\n---\n# E\n',
+  });
   try {
-    await mkdir(path.join(dir, 'adr', 'bff'), { recursive: true });
-    await mkdir(path.join(dir, 'more', 'k2', 'services', 'content'), { recursive: true });
-    await writeFile(path.join(dir, 'adr', 'README.md'), '# About\n');
-    await writeFile(path.join(dir, 'adr', 'bff', '0001-a.md'), '---\nstatus: accepted\n---\n# A\n');
-    await writeFile(path.join(dir, 'adr', 'bff', 'template.md'), '# Template\n');
-    await writeFile(path.join(dir, 'adr', 'bff', '.draft.md'), '# Hidden\n');
-    await writeFile(path.join(dir, 'more', 'k2', 'services', 'content', '0001-b.md'), '# B\n');
-    const folders = await scanAdrFolders(nodeFileSystem, dir, ['adr', 'more', 'missing']);
+    const { index, problems } = indexAdrs(scan, m, ['adr']);
+    assert.deepEqual(index.components['k2.bff'].map((a) => a.name), ['0001-a.md', '0002-b.md'], 'sorted by number');
+    assert.deepEqual(index.components['k2.services.content'].map((a) => a.name), ['0001-a.md'], 'one decision, two elements');
+    assert.deepEqual(index.components['k2.frontends.ui'].map((a) => a.name), ['0003-c.md'], 'MADR 2 bullets');
+    assert.deepEqual(index.system.map((a) => a.name), ['0004-d.md']);
+    assert.equal(index.components['k2.data.ui'], undefined, 'an ambiguous key links nothing');
     assert.deepEqual(
-      folders.map((f) => [f.dir, f.adrs.map((a) => a.title)]).sort(),
+      problems.map((p) => [path.basename(p.file), p.severity, p.message, p.range.line]),
       [
-        ['bff', ['A']],
-        ['k2/services/content', ['B']],
+        ['0005-e.md', 'warning', '"ui" matches several elements (k2.data.ui, k2.frontends.ui); use the full id', 2],
+        ['0005-e.md', 'warning', 'No element "nope" in the diagram', 2],
       ],
     );
   } finally {
@@ -121,39 +115,86 @@ test('scans several roots, skipping READMEs, templates and hidden files', async 
   }
 });
 
-test('plans a new decision in a folder that matches the element', () => {
-  const m = model({ shop: 'Shop', 'shop.api': 'API', 'shop.db': 'DB', 'ops.db': 'Ops DB' });
-  const plan = (id: string, title = 'Use Postgres for orders') =>
-    planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id, existing: [], title, date: '2026-10-31' });
-  const matched = (file: string) => {
-    const dir = path.relative('/p/adr', path.dirname(file)).split(path.sep).join('/');
-    return Object.keys(assignAdrs([{ dir, adrs: [parseMadr('# x\n', file)] }], m, ['adr']).components);
-  };
+test('checks status, dates, numbers, links and missing roots', async () => {
+  const m = model({ gateway: 'API Gateway' });
+  const { dir, scan } = await scanned({
+    'adr/0001-a.md': '---\nstatus: draft\ndate: 3 May 2025\ncomponents: [gateway]\n---\n# A\n\nSee [B](0002-b.md), [gone](0009-gone.md) and [web](https://x.dev).\n',
+    'adr/0002-b.md': '# B\n',
+    'adr/0002-c.md': '---\nstatus: accepted\ncomponents: []\n---\n# C\n',
+    'adr/gateway/0001-old-layout.md': '---\nstatus: accepted\n---\n# Old layout\n',
+  });
+  try {
+    assert.deepEqual(scan.missingRoots, ['more']);
+    const { index, problems } = indexAdrs(scan, m, ['adr', 'more']);
+    assert.deepEqual(index.system.map((a) => a.name), ['0001-old-layout.md', '0002-b.md', '0002-c.md']);
+    assert.deepEqual(
+      problems.map((p) => [path.relative(path.join(dir, 'adr'), p.file).split(path.sep).join('/'), p.severity, p.message, p.range.line]),
+      [
+        ['0001-a.md', 'warning', 'Unknown status "draft"; use proposed, accepted, rejected, deprecated, superseded', 1],
+        ['0001-a.md', 'info', 'Write the date as YYYY-MM-DD', 2],
+        ['0001-a.md', 'warning', '0009-gone.md does not exist', 7],
+        ['gateway/0001-old-layout.md', 'info', 'Not linked to any element, so it is system-wide. Add "components: [gateway]" to link it to API Gateway', 3],
+        ['0002-b.md', 'info', 'No status; add one of proposed, accepted, rejected, deprecated, superseded', 0],
+        ['0002-b.md', 'warning', 'ADR-0002 is also the number of 0002-c.md', 0],
+        ['0002-c.md', 'warning', 'ADR-0002 is also the number of 0002-b.md', 4],
+      ],
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('scans several roots, skipping READMEs, templates and hidden files', async () => {
+  const { dir, scan } = await scanned(
+    {
+      'adr/README.md': '# About\n',
+      'adr/bff/0001-a.md': '---\nstatus: accepted\n---\n# A\n',
+      'adr/bff/template.md': '# Template\n',
+      'adr/bff/.draft.md': '# Hidden\n',
+      'more/k2/services/content/0001-b.md': '# B\n',
+    },
+    ['adr', 'more', 'missing'],
+  );
+  try {
+    assert.deepEqual(scan.files.map((f) => f.adr.title).sort(), ['A', 'B']);
+    assert.deepEqual(scan.missingRoots, ['missing']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('plans a new decision in the first root, linked to its element', () => {
+  const m = model({ shop: 'Shop', 'shop.api': 'API', 'shop.db': 'DB', 'ops.db': 'Ops DB', 'my svc': 'Mine' });
+  const all = [parseMadr('# x\n', '/p/adr/0007-x.md'), parseMadr('# y\n', '/p/adr/sub/0012-y.md')];
+  const plan = (id: string | null, title = 'Use Postgres for orders') =>
+    planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id, existing: [], all, title, date: '2026-10-31' });
 
   const api = plan('shop.api');
-  assert.equal(api.file, path.join('/p/adr', 'api', '0001-use-postgres-for-orders.md'), 'unique key');
-  assert.deepEqual(matched(api.file), ['shop.api']);
-
-  const db = plan('shop.db', 'Café über alles!');
-  assert.equal(db.file, path.join('/p/adr', 'shop.db', '0001-cafe-uber-alles.md'), 'full id when the key is shared');
-  assert.deepEqual(matched(db.file), ['shop.db']);
-
+  assert.equal(api.file, path.join('/p/adr', '0008-use-postgres-for-orders.md'), 'numbered after the highest in that folder');
   const adr = parseMadr(api.text, api.file);
   assert.equal(adr.title, 'Use Postgres for orders');
   assert.equal(adr.status, 'proposed');
   assert.equal(adr.date, '2026-10-31');
-  assert.equal(adr.number, '0001');
+  assert.equal(adr.number, '0008');
+  assert.deepEqual(adr.components, ['shop.api']);
   assert.match(api.text.split('\n')[api.cursor], /^\{Describe/);
+
+  assert.equal(path.basename(plan('shop.db', 'Café über alles!').file), '0008-cafe-uber-alles.md');
+  assert.deepEqual(parseMadr(plan('my svc').text, 'x.md').components, ['my svc']);
+  const system = plan(null, 'Run on AWS');
+  assert.deepEqual(parseMadr(system.text, system.file).components, [], 'system-wide');
+  assert.doesNotMatch(system.text, /components/);
 });
 
-test('a new decision goes next to existing ones, numbered after all of them', () => {
+test('a new decision goes next to the element’s existing ones, preferring the first root', () => {
   const m = model({ gateway: 'Gateway' });
   const existing = [parseMadr('# a\n', '/p/shared/gateway/0007-a.md'), parseMadr('# b\n', '/p/adr/gw/0002-b.md')];
-  const plan = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing, title: 'C', date: '2026-10-31' });
-  assert.equal(plan.file, path.join('/p/adr', 'gw', '0008-c.md'), 'first root wins, highest number + 1');
-  const only = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing: existing.slice(0, 1), title: 'C', date: '2026-10-31' });
+  const all = [...existing, parseMadr('# c\n', '/p/adr/gw/0004-c.md')];
+  const plan = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing, all, title: 'C', date: '2026-10-31' });
+  assert.equal(plan.file, path.join('/p/adr', 'gw', '0005-c.md'), 'first root wins, highest number in the folder + 1');
+  const only = planNewAdr({ baseDir: '/p', roots: ['adr', 'shared'], model: m, id: 'gateway', existing: existing.slice(0, 1), all, title: 'C', date: '2026-10-31' });
   assert.equal(only.file, path.join('/p/shared', 'gateway', '0008-c.md'));
-  assert.throws(() => planNewAdr({ baseDir: '/p', roots: [], model: m, id: 'gateway', existing: [], title: 'C', date: '2026-10-31' }), /adr-folders/);
+  assert.throws(() => planNewAdr({ baseDir: '/p', roots: [], model: m, id: 'gateway', existing: [], all, title: 'C', date: '2026-10-31' }), /adr-folders/);
 });
 
 const { D2 } = createRequire(import.meta.url)('@d2lang/d2');
@@ -171,4 +212,7 @@ test('ADR folders come from the adr-folders variable', async () => {
   assert.deepEqual(await folders('vars: {\n  adr-folders: "docs/decisions"\n}\na\n'), ['docs/decisions']);
   assert.deepEqual(await folders('vars: {\n  adr-folders: [a]\n}\nvars: {\n  adr-folders: [b; c]\n}\nx\n'), ['b', 'c'], 'last one wins');
   assert.deepEqual(await folders('x: {\n  vars: {\n    adr-folders: [nested]\n  }\n}\n'), [], 'only the top level counts');
+  const r = await compiler.compile('vars: {\n  adr-folders: [adr; docs/decisions]\n}\na\n');
+  assert.ok(r.ok);
+  assert.deepEqual(r.built.adrFolderRanges['docs/decisions'], { line: 1, col: 21, endLine: 1, endCol: 35 });
 });

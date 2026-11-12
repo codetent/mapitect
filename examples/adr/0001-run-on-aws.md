@@ -24,7 +24,7 @@ they run?
 
 Chosen option: "AWS", because CloudFront, SQS and managed PostgreSQL cover most of what we need and
 the team already knows it. All traffic enters through one gateway, see
-[ADR-0001 for the gateway](../gateway/0001-single-api-gateway.md).
+[ADR-0001 for the gateway](gateway/0001-single-api-gateway.md).
 
 ### Consequences
 
